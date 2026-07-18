@@ -98,13 +98,3 @@ to get a churn probability and risk category (Low / Medium / High).
 Python, pandas, scikit-learn, XGBoost, imbalanced-learn, statsmodels,
 matplotlib, seaborn, Streamlit.
 
-## Team
-
-| Name | Student ID |
-|---|---|
-| [PLACEHOLDER] | [PLACEHOLDER] |
-| [PLACEHOLDER] | [PLACEHOLDER] |
-| [PLACEHOLDER] | [PLACEHOLDER] |
-| [PLACEHOLDER] | [PLACEHOLDER] |
-
-BMDS2003 Data Science — Tunku Abdul Rahman University of Management and Technology
