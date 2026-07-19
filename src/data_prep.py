@@ -5,15 +5,20 @@ Corresponds to report Sections 2.1-2.6 (feature engineering) and Section 3
 
 All functions are pure (take a DataFrame in, return a new DataFrame/array out)
 so they can be unit-tested and reused by both the analysis notebook and the
-Streamlit prototype (see streamlit_app/train_model.py, which mirrors the
+Streamlit prototype (see streamlit/train_model.py, which mirrors the
 cleaning + build_feature_matrix logic here to keep training and inference
 consistent).
 """
 
+import os
 import pandas as pd
 import numpy as np
 
-RAW_CSV_PATH = "Telco_Cusomer_Churn.csv"
+# Resolve the dataset relative to this file, so imports work regardless of the
+# caller's working directory (notebook in notebooks/, ad-hoc scripts, etc.).
+RAW_CSV_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "data", "Telco_Cusomer_Churn.csv"
+)
 
 # Columns where the "No internet service" / "No phone service" category is
 # collapsed into "No", since that information is already captured separately

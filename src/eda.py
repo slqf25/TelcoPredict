@@ -9,7 +9,27 @@ directly, so the notebook controls how results are displayed.
 
 import pandas as pd
 import numpy as np
+from scipy.stats import chi2_contingency, pointbiserialr
 from statsmodels.stats.outliers_influence import variance_inflation_factor
+
+
+def _churn_binary(df: pd.DataFrame, target_col: str = "Churn") -> pd.Series:
+    """0/1 churn series (pandas>=3.0 stores string cols as StringDtype, not object)."""
+    s = df[target_col]
+    if pd.api.types.is_numeric_dtype(s):
+        return s.astype(int)
+    return (s == "Yes").astype(int)
+
+
+def _cramers_v_band(v: float) -> str:
+    """Standard effect-size bands for Cramér's V."""
+    if v < 0.10:
+        return "negligible"
+    if v < 0.30:
+        return "weak"
+    if v < 0.50:
+        return "moderate"
+    return "strong"
 
 
 def summary_statistics(df: pd.DataFrame, cols: list) -> pd.DataFrame:
@@ -150,3 +170,59 @@ def validate_engineered_features(df: pd.DataFrame, target_col: str = "Churn") ->
     )
 
     return results
+
+
+# ------------------------------------------------------------------------
+# Section 2.8 — Statistical association tests (CLO3: statistical methods)
+# ------------------------------------------------------------------------
+
+def chi_square_tests(df: pd.DataFrame, cat_cols: list, target_col: str = "Churn") -> pd.DataFrame:
+    """
+    Report Section 2.8 — Chi-square test of independence between each categorical
+    feature and Churn, with Cramér's V as a sample-size-independent effect size.
+
+    The chi-square p-value says whether an association is statistically
+    significant; Cramér's V (0-1) says how strong it is, so a feature can be
+    highly significant yet practically weak on a 7,043-row dataset.
+    Returns one row per feature, sorted by Cramér's V (strongest first).
+    """
+    rows = []
+    for c in cat_cols:
+        contingency = pd.crosstab(df[c], df[target_col])
+        chi2, p, dof, _ = chi2_contingency(contingency)
+        n = contingency.values.sum()
+        r, k = contingency.shape
+        v = np.sqrt(chi2 / (n * (min(r, k) - 1))) if min(r, k) > 1 else np.nan
+        rows.append({
+            "feature": c,
+            "chi2": round(chi2, 2),
+            "dof": dof,
+            "p_value": p,
+            "cramers_v": round(v, 3),
+            "strength": _cramers_v_band(v),
+            "significant_(p<0.05)": bool(p < 0.05),
+        })
+    return pd.DataFrame(rows).sort_values("cramers_v", ascending=False).reset_index(drop=True)
+
+
+def point_biserial_tests(df: pd.DataFrame, num_cols: list, target_col: str = "Churn") -> pd.DataFrame:
+    """
+    Report Section 2.8 — Point-biserial correlation between each numeric/engineered
+    feature and the binary Churn target, with its significance p-value. This is the
+    correct correlation coefficient for a continuous-vs-binary pair, and complements
+    the chi-square tests above (which cover the categorical features).
+    Returns one row per feature, sorted by absolute correlation (strongest first).
+    """
+    y = _churn_binary(df, target_col)
+    rows = []
+    for c in num_cols:
+        r, p = pointbiserialr(y, df[c])
+        rows.append({
+            "feature": c,
+            "point_biserial_r": round(r, 3),
+            "p_value": p,
+            "significant_(p<0.05)": bool(p < 0.05),
+        })
+    return (pd.DataFrame(rows)
+            .sort_values("point_biserial_r", key=lambda s: s.abs(), ascending=False)
+            .reset_index(drop=True))
