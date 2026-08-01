@@ -3,8 +3,11 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 
-# Trained model artifacts (regenerate via streamlit/train_model.py)
+# Trained model artifacts — streamlit/*.pkl are intentionally committed (see
+# streamlit/train_model.py) so teammates don't need to retrain locally. Any
+# other .pkl elsewhere stays ignored.
 *.pkl
+!streamlit/*.pkl
 
 # OS
 .DS_Store
