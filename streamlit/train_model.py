@@ -74,7 +74,15 @@ def build_feature_matrix(df: pd.DataFrame) -> pd.DataFrame:
               "MultipleLines"] + SERVICE_COLS_WITH_NO_INTERNET:
         X[c] = (X[c] == "Yes").astype(int)
 
-    # One-hot encoding (drop_first=True to avoid multicollinearity, Section 3.5)
+    # One-hot encoding (drop_first=True to avoid multicollinearity, Section 3.5).
+    # Categories are fixed explicitly before encoding: pd.get_dummies only creates
+    # columns for categories actually PRESENT in the data, so a single-row
+    # prediction (only one InternetService/PaymentMethod value present) would
+    # otherwise produce zero dummy columns for that feature — silently making
+    # the model ignore it regardless of which option was selected.
+    X["InternetService"] = pd.Categorical(X["InternetService"], categories=["DSL", "Fiber optic", "No"])
+    X["PaymentMethod"] = pd.Categorical(X["PaymentMethod"], categories=[
+        "Bank transfer (automatic)", "Credit card (automatic)", "Electronic check", "Mailed check"])
     X = pd.get_dummies(X, columns=["InternetService", "PaymentMethod"], drop_first=True)
 
     return X
@@ -107,7 +115,7 @@ def main():
         "Random Forest": RandomForestClassifier(
             n_estimators=200, max_depth=12, min_samples_leaf=5, random_state=42),
         "XGBoost": XGBClassifier(
-            max_depth=4, learning_rate=0.1, n_estimators=150, min_child_weight=5,
+            max_depth=4, learning_rate=0.1, n_estimators=150, min_child_weight=10,
             subsample=0.8, colsample_bytree=0.8, reg_lambda=1,
             random_state=42, eval_metric="logloss"),
     }

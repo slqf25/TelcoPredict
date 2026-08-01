@@ -146,6 +146,13 @@ def build_feature_matrix(df: pd.DataFrame) -> pd.DataFrame:
               "MultipleLines"] + SERVICE_COLS_WITH_NO_INTERNET:
         X[c] = (X[c] == "Yes").astype(int)
 
+    # Categories fixed explicitly before encoding: pd.get_dummies only creates columns
+    # for categories PRESENT in the data, so a single-row batch (e.g. one prediction
+    # request) would otherwise produce zero dummy columns for InternetService/PaymentMethod
+    # regardless of which value was set — see streamlit/train_model.py for the same fix.
+    X["InternetService"] = pd.Categorical(X["InternetService"], categories=["DSL", "Fiber optic", "No"])
+    X["PaymentMethod"] = pd.Categorical(X["PaymentMethod"], categories=[
+        "Bank transfer (automatic)", "Credit card (automatic)", "Electronic check", "Mailed check"])
     X = pd.get_dummies(X, columns=["InternetService", "PaymentMethod"], drop_first=True)
     return X
 
