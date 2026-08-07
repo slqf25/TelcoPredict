@@ -26,12 +26,19 @@ touch the code or the report so you don't redo work or reintroduce fixed bugs.
      at `C:\Users\Alex\Downloads\DS Assignment.docx` (**not** in this repo — see §6).
   2. Code ZIP named `GroupX_RSWY1S2_DataScienceProject.zip` containing all `.py`/
      `.ipynb` files and a working deployment prototype (Streamlit — compulsory).
-- **Rubric weight (of 100):** Model Selection 25 · Data Preprocessing 10 ·
-  Descriptive/Exploratory Data Analysis **30** · Graphing & Visualisation 15 ·
-  Advanced Analytics & Discussion **10** · Report Structure 5 · Presentation 5.
-  (Note: an earlier read of the rubric mis-stated Advanced Analytics as 25 — it's 10.
-  EDA at 30 is the single biggest line item, which is why so much effort went into
-  Section 2/3 analyses and their visualisations.)
+- **Rubric weight (of 100)** — verified against the official
+  `202605 BMDS2003 Marking Rubrics.pdf` (2026-08-07): Model Selection 25 ·
+  Data Preprocessing 10 · Descriptive/Exploratory Data Analysis **15** ·
+  Graphing & Visualisation 10 · **Advanced Analytics & Discussion 30** ·
+  Report Structure 5 · Presentation 5.
+  (Correction: two earlier reads of the rubric had EDA and Advanced Analytics
+  swapped — EDA was wrongly recorded as 30 and Advanced Analytics as 10. In
+  reality **Advanced Analytics & Discussion (30) is the single biggest line
+  item**, not EDA (15). This means the report's discussion should weight
+  literature-grounded model comparison, honest limitations/improvements
+  discussion, and the prototype's real-world-deployment framing more heavily
+  than further EDA breadth — the current 19-analysis EDA section already
+  exceeds what its 15-mark weight calls for.)
 - **Spec requirements satisfied:** 4 models (4-member group requires 4, one must be
   baseline), ≥3 required — done. Model choice justified with ≥2 literature references
   per model, in-text cited — done (report Table 5). Compulsory deployment prototype —
