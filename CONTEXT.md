@@ -67,6 +67,7 @@ Asgm_DS/
 ├── reports/figures/             # exported PNGs for the report (19 figures)
 └── streamlit/                   # deployment prototype
     ├── app.py                   # the Streamlit app (see §5)
+    ├── plotly_charts.py         # interactive Plotly chart layer, app-only (see §4)
     ├── train_model.py           # trains + saves all 4 models for the app
     └── requirement.txt          # prototype-only dependencies
 ```
@@ -227,6 +228,59 @@ Note: a glassmorphism CSS redesign of the app was applied locally (outside this
 Claude session) at some point during the work — it was preserved as-is; new features
 were added around it via targeted edits, not a full file rewrite.
 
+### Plotly interactive charts + friendly error handling (later session)
+
+`streamlit/plotly_charts.py` (new file, app-only — `src/eda_plots.py` and
+`src/evaluation.py` stay matplotlib, since they feed the notebook and the report's
+already-graded static PNG exports; nothing there was touched). It reimplements the
+rendering layer only, reusing the exact same underlying tables/computations
+(`eda.py`, `evaluation.py`, plain sklearn calls against the deployed models) so all
+numbers match the matplotlib originals exactly — only hover/zoom/legend interactivity
+changed. **18 of 19 report charts are now Plotly** (`st.plotly_chart`); only the
+**Decision Tree structure** stays matplotlib (`sklearn.tree.plot_tree` has no
+reasonable Plotly equivalent). Two bugs found and fixed during this conversion,
+both worth knowing about if you touch `plotly_charts.py` again:
+
+1. **Title/legend overlap** — an internal Plotly `title=` was set on every chart on
+   top of an ALREADY-present markdown header in `app.py` (e.g. "**Figure 6 — ROC
+   curves**" printed just above the chart) — the two collided visually because
+   Plotly's default title position and the horizontal legend (`y=1.02`) both sit in
+   the same top-left band. Fixed by dropping the internal Plotly title entirely
+   (`_base_layout()` no longer accepts `title=`) and reserving explicit top margin
+   (`margin.t`) for the legend instead of letting it float above the plot.
+2. **Negative-bar label collision** — `plot_correlation_with_target_plotly` (Figure 4)
+   put its value labels `textposition="outside"` unconditionally; for a *negative*
+   horizontal bar, "outside" renders further left than the bar tip, and for the
+   longest negative bar (`tenure`, r=-0.352) that collided with the y-axis category
+   label itself, rendering as garbled text ("tenure).352"). Fixed by putting negative
+   bars' labels `inside` (white text) and positive bars' labels `outside` — general
+   lesson: **never hardcode `textposition="outside"` on a horizontal bar chart that
+   can have negative values**, pick per-bar based on sign.
+
+Verification method used since this environment's browser pane cannot reliably
+screenshot: installed `kaleido` (`pip install kaleido`, dev-only, NOT added to
+`requirements.txt` since the app itself never calls `fig.write_image`) and rendered
+each new chart to a static PNG (`fig.write_image(...)`) to visually inspect layout
+bugs directly, rather than trying to screenshot the live app.
+
+Also added: `load_artifacts()` (in `app.py`) now wraps its three `.pkl` reads in
+try/except — a missing-file or version-mismatch error shows a friendly `st.error()`
+with the exact fix (`python train_model.py`) and calls `st.stop()`, instead of a raw
+Python traceback. This was deliberately scoped to just this one function (the app's
+only external-file dependency) rather than added everywhere — a full test suite is
+overkill for a one-off assignment demo, but a raw traceback during the graded
+Presentation (5% of the mark) is a real, cheap-to-prevent risk.
+
+Two things were explicitly investigated and found to be **inherent, not bugs**:
+transition animation on chart re-render only has something to animate on the
+**Threshold tab slider** (the only place a chart's underlying data actually changes
+after first load — it's wrapped in `st.fragment` so only that section reruns) and the
+**Predict tab's risk gauge/badge** (CSS `transition` on `width`/`background`, changes
+per prediction). The Model Comparison / ROC / PR / VIF / Cramér's V / heatmap charts
+show the same all-models or all-features data on every render, so there is nothing
+for Plotly's `transition` to animate between — this is a data-shape fact, not a
+missed implementation.
+
 ---
 
 ## 5. How to run things
@@ -300,3 +354,14 @@ models trained on the old code.
   `cd streamlit && streamlit run app.py`, and if `import streamlit` ever behaves
   strangely, check `streamlit.__file__` — `None` means you've hit the namespace-package
   shadow, not a real import.
+- **Plotly horizontal bar charts with negative values** — never hardcode
+  `textposition="outside"`; for negative bars the label renders past the bar tip
+  (further left), which can collide with y-axis category labels for the longest bar.
+  Pick per-bar: `"inside"` for negative, `"outside"` for positive (see
+  `plotly_charts.py:plot_correlation_with_target_plotly`).
+- **Verifying Plotly chart layout without a working screenshot tool** — `pip install
+  kaleido` then `fig.write_image("out.png", width=..., height=..., scale=2)` and read
+  the PNG directly. Much more reliable in this environment than trying to screenshot
+  the live Streamlit app (the in-app browser pane here cannot reliably composite/
+  screenshot). `kaleido` is dev-only — don't add it to `requirements.txt`, the app
+  itself never calls `write_image`.

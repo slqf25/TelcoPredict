@@ -42,6 +42,7 @@ import eda  # noqa: E402
 import eda_plots as epl  # noqa: E402
 import modelling as md  # noqa: E402
 import evaluation as ev  # noqa: E402
+import plotly_charts as pc  # Plotly (interactive) chart layer — app-only, see file docstring
 from sklearn.linear_model import LogisticRegression  # noqa: E402
 from sklearn.tree import DecisionTreeClassifier  # noqa: E402
 from sklearn.ensemble import RandomForestClassifier  # noqa: E402
@@ -185,6 +186,31 @@ st.markdown(f"""
   
   .secnote {{ color: var(--text-color); opacity: 0.6; font-size:.95rem; margin:-4px 0 12px; }}
   .stTabs [data-baseweb="tab"] {{ font-size:1.05rem; font-weight:600; border-radius: 12px 12px 0 0; }}
+
+  /* Chart entrance animation — every Plotly AND matplotlib figure fades/slides in on
+     first render, so switching tabs or triggering a recompute feels alive rather than
+     a static image just appearing. */
+  [data-testid="stPlotlyChart"], [data-testid="stImage"] {{
+      animation: fadeSlideIn 0.6s ease-out;
+  }}
+  @keyframes fadeSlideIn {{
+      from {{ opacity: 0; transform: translateY(14px); }}
+      to   {{ opacity: 1; transform: translateY(0); }}
+  }}
+
+  /* High-risk badge pulses to draw the eye; low/medium stay static (calmer states) */
+  .risk-badge.pulse {{ animation: pulseGlow 1.6s ease-in-out infinite; }}
+  @keyframes pulseGlow {{
+      0%, 100% {{ box-shadow: 0 4px 16px rgba(192,0,0,0.25); transform: scale(1); }}
+      50%      {{ box-shadow: 0 4px 28px rgba(192,0,0,0.55); transform: scale(1.03); }}
+  }}
+
+  /* Finding callouts slide in from the left */
+  .finding {{ animation: slideInLeft 0.5s ease-out; }}
+  @keyframes slideInLeft {{
+      from {{ opacity: 0; transform: translateX(-10px); }}
+      to   {{ opacity: 1; transform: translateX(0); }}
+  }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -214,12 +240,38 @@ def show_fig(fig):
 # ----------------------------------------------------------------------
 @st.cache_resource
 def load_artifacts():
-    with open(os.path.join(_HERE, "models.pkl"), "rb") as f:
-        models = pickle.load(f)
-    with open(os.path.join(_HERE, "scaler.pkl"), "rb") as f:
-        scaler = pickle.load(f)
-    with open(os.path.join(_HERE, "feature_columns.pkl"), "rb") as f:
-        feature_columns = pickle.load(f)
+    """
+    Loads the three trained-model artifacts this app depends on. This is the app's
+    single external-file dependency (everything else is computed live from data/ via
+    src/), so it's the one place worth a friendly failure message instead of a raw
+    traceback — most likely to break during a live demo on a machine that hasn't run
+    `python train_model.py` yet, or after a fresh git clone.
+    """
+    try:
+        with open(os.path.join(_HERE, "models.pkl"), "rb") as f:
+            models = pickle.load(f)
+        with open(os.path.join(_HERE, "scaler.pkl"), "rb") as f:
+            scaler = pickle.load(f)
+        with open(os.path.join(_HERE, "feature_columns.pkl"), "rb") as f:
+            feature_columns = pickle.load(f)
+    except FileNotFoundError as e:
+        st.error(
+            "**Model artifacts not found.** This app needs `models.pkl`, `scaler.pkl`, "
+            "and `feature_columns.pkl` in the `streamlit/` folder before it can run.\n\n"
+            f"Missing file: `{os.path.basename(e.filename)}`\n\n"
+            "Fix: open a terminal in the `streamlit/` folder and run:\n"
+            "```\npython train_model.py\n```\n"
+            "then reload this page."
+        )
+        st.stop()
+    except Exception as e:
+        st.error(
+            f"**Could not load model artifacts** ({type(e).__name__}: {e}).\n\n"
+            "This usually means the `.pkl` files were trained with a different library "
+            "version than what's installed here. Fix: run `pip install -r requirement.txt` "
+            "then `python train_model.py` again in the `streamlit/` folder, and reload this page."
+        )
+        st.stop()
     return models, scaler, feature_columns
 
 
@@ -527,105 +579,121 @@ features: `ContractRiskScore` (Month-to-month = 2, One year = 1, Two year = 0) a
         st.caption("These two engineered features outrank every raw column in the tree models' "
                    "importance rankings (Section 5.3).")
 
-    predict_clicked = st.button(f"🔮  Predict Churn Risk  ·  {model_name}",
-                                width="stretch", type="primary")
+    # The button + result block runs as a fragment: clicking Predict only reruns this
+    # function, not the whole script (Data Analysis / Models tab computations are
+    # skipped), so the result appears snappily with no full-page flash — and the
+    # smooth CSS/Plotly transitions below actually get a chance to play.
+    @st.fragment
+    def render_prediction(gender, senior_citizen, partner, dependents, tenure, contract,
+                          paperless_billing, payment_method, monthly_charges, total_charges,
+                          phone_service, multiple_lines, internet_service, addon_vals,
+                          model_name, model, models, feature_columns, scaler):
+        predict_clicked = st.button(f"🔮  Predict Churn Risk  ·  {model_name}",
+                                    width="stretch", type="primary")
 
-    if predict_clicked:
-        eff_addons = dict(addon_vals)
-        eff_lines = multiple_lines
-        if internet_service == "No":
-            eff_addons = {s: "No" for s in ADDON_SERVICES}
-        if phone_service == "No":
-            eff_lines = "No"
+        if predict_clicked:
+            eff_addons = dict(addon_vals)
+            eff_lines = multiple_lines
+            if internet_service == "No":
+                eff_addons = {s: "No" for s in ADDON_SERVICES}
+            if phone_service == "No":
+                eff_lines = "No"
 
-        raw_input = pd.DataFrame([{
-            "customerID": "PROTOTYPE-INPUT", "gender": gender,
-            "SeniorCitizen": 1 if senior_citizen == "Yes" else 0,
-            "Partner": partner, "Dependents": dependents, "tenure": tenure,
-            "PhoneService": phone_service, "MultipleLines": eff_lines,
-            "InternetService": internet_service,
-            "OnlineSecurity": eff_addons["OnlineSecurity"],
-            "OnlineBackup": eff_addons["OnlineBackup"],
-            "DeviceProtection": eff_addons["DeviceProtection"],
-            "TechSupport": eff_addons["TechSupport"],
-            "StreamingTV": eff_addons["StreamingTV"],
-            "StreamingMovies": eff_addons["StreamingMovies"],
-            "Contract": contract, "PaperlessBilling": paperless_billing,
-            "PaymentMethod": payment_method, "MonthlyCharges": monthly_charges,
-            "TotalCharges": total_charges, "Churn": "No",
-        }])
+            raw_input = pd.DataFrame([{
+                "customerID": "PROTOTYPE-INPUT", "gender": gender,
+                "SeniorCitizen": 1 if senior_citizen == "Yes" else 0,
+                "Partner": partner, "Dependents": dependents, "tenure": tenure,
+                "PhoneService": phone_service, "MultipleLines": eff_lines,
+                "InternetService": internet_service,
+                "OnlineSecurity": eff_addons["OnlineSecurity"],
+                "OnlineBackup": eff_addons["OnlineBackup"],
+                "DeviceProtection": eff_addons["DeviceProtection"],
+                "TechSupport": eff_addons["TechSupport"],
+                "StreamingTV": eff_addons["StreamingTV"],
+                "StreamingMovies": eff_addons["StreamingMovies"],
+                "Contract": contract, "PaperlessBilling": paperless_billing,
+                "PaymentMethod": payment_method, "MonthlyCharges": monthly_charges,
+                "TotalCharges": total_charges, "Churn": "No",
+            }])
 
-        cleaned = engineer_and_clean(raw_input)
-        X_input = build_feature_matrix_proto(cleaned).reindex(columns=feature_columns, fill_value=0)
-        X_input_scaled = X_input.copy()
-        X_input_scaled[NUM_COLS_TO_SCALE] = scaler.transform(X_input[NUM_COLS_TO_SCALE])
+            cleaned = engineer_and_clean(raw_input)
+            X_input = build_feature_matrix_proto(cleaned).reindex(columns=feature_columns, fill_value=0)
+            X_input_scaled = X_input.copy()
+            X_input_scaled[NUM_COLS_TO_SCALE] = scaler.transform(X_input[NUM_COLS_TO_SCALE])
 
-        proba = float(model.predict_proba(X_input_scaled)[0, 1])
-        if proba < 0.40:
-            risk_label, risk_color = "LOW RISK", GREEN
-        elif proba < 0.70:
-            risk_label, risk_color = "MEDIUM RISK", AMBER
+            proba = float(model.predict_proba(X_input_scaled)[0, 1])
+            if proba < 0.40:
+                risk_label, risk_color, badge_class = "LOW RISK", GREEN, "risk-badge"
+            elif proba < 0.70:
+                risk_label, risk_color, badge_class = "MEDIUM RISK", AMBER, "risk-badge"
+            else:
+                risk_label, risk_color, badge_class = "HIGH RISK", RED, "risk-badge pulse"
+
+            st.divider()
+            st.subheader("Prediction Result")
+            r1, r2 = st.columns([1, 2])
+            with r1:
+                st.metric(f"Churn Probability · {model_name}", f"{proba*100:.1f}%",
+                          delta=f"{(proba - 0.2654)*100:+.1f} pp vs base rate")
+            with r2:
+                st.markdown(f'<div class="{badge_class}" style="background:{risk_color}">{risk_label}</div>',
+                            unsafe_allow_html=True)
+                st.markdown(
+                    f'<div class="gauge"><div class="gauge-fill" '
+                    f'style="width:{proba*100:.0f}%;background:{risk_color}"></div></div>',
+                    unsafe_allow_html=True)
+                st.caption("Low < 40%  ·  Medium 40–70%  ·  High > 70%   "
+                           "(dataset base churn rate: 26.5%)")
+            if risk_label == "LOW RISK":
+                st.balloons()
+
+            # top contributing features
+            st.markdown("##### Top factors influencing this prediction")
+            if hasattr(model, "feature_importances_"):
+                importances = pd.Series(model.feature_importances_, index=feature_columns)
+                imp_col, imp_note = f"{model_name} Importance", (
+                    f"Global feature importance for {model_name} (Section 5.3), "
+                    "shown against this customer's value.")
+            else:
+                importances = pd.Series(np.abs(model.coef_[0]), index=feature_columns)
+                imp_col, imp_note = f"{model_name} |Coefficient|", (
+                    f"{model_name} has no feature_importances_; absolute standardised coefficient "
+                    "shown instead (Section 5.4).")
+            top_features = importances.sort_values(ascending=False).head(6)
+            rows = []
+            for feat in top_features.index:
+                val = X_input.iloc[0][feat]
+                rows.append({"Feature": feat, imp_col: round(top_features[feat], 3),
+                             "This customer": round(val, 2) if isinstance(val, (int, float, np.integer, np.floating)) else val})
+            st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+            st.caption(imp_note + " Global ranking, not a per-prediction SHAP explanation (future work).")
+
+            # all four models on this customer
+            st.markdown("##### All four models — churn probability for this customer")
+            all_probs = {n: float(mm.predict_proba(X_input_scaled)[0, 1]) * 100 for n, mm in models.items()}
+            pdf = pd.DataFrame({"Model": list(all_probs), "Churn probability (%)": list(all_probs.values())})
+            mc1, mc2 = st.columns([2, 1])
+            with mc1:
+                st.dataframe(
+                    pdf.style.format({"Churn probability (%)": "{:.1f}"})
+                       .background_gradient(cmap="Reds", subset=["Churn probability (%)"]),
+                    hide_index=True, width="stretch")
+            with mc2:
+                spread = max(all_probs.values()) - min(all_probs.values())
+                st.metric("Model agreement spread", f"{spread:.1f} pp",
+                          help="Range between the most and least alarmed model. A wide spread means "
+                               "the models disagree about this customer.")
+            with st.expander("Show raw model input (debug)"):
+                st.dataframe(X_input.T, width="stretch")
         else:
-            risk_label, risk_color = "HIGH RISK", RED
+            st.info("Adjust the profile above, then click **Predict Churn Risk**. "
+                    "Use the sidebar presets to jump to the highest- or lowest-risk segment "
+                    "identified in the report.")
 
-        st.divider()
-        st.subheader("Prediction Result")
-        r1, r2 = st.columns([1, 2])
-        with r1:
-            st.metric(f"Churn Probability · {model_name}", f"{proba*100:.1f}%",
-                      delta=f"{(proba - 0.2654)*100:+.1f} pp vs base rate")
-        with r2:
-            st.markdown(f'<div class="risk-badge" style="background:{risk_color}">{risk_label}</div>',
-                        unsafe_allow_html=True)
-            st.markdown(
-                f'<div class="gauge"><div class="gauge-fill" '
-                f'style="width:{proba*100:.0f}%;background:{risk_color}"></div></div>',
-                unsafe_allow_html=True)
-            st.caption("Low < 40%  ·  Medium 40–70%  ·  High > 70%   "
-                       "(dataset base churn rate: 26.5%)")
-
-        # top contributing features
-        st.markdown("##### Top factors influencing this prediction")
-        if hasattr(model, "feature_importances_"):
-            importances = pd.Series(model.feature_importances_, index=feature_columns)
-            imp_col, imp_note = f"{model_name} Importance", (
-                f"Global feature importance for {model_name} (Section 5.3), "
-                "shown against this customer's value.")
-        else:
-            importances = pd.Series(np.abs(model.coef_[0]), index=feature_columns)
-            imp_col, imp_note = f"{model_name} |Coefficient|", (
-                f"{model_name} has no feature_importances_; absolute standardised coefficient "
-                "shown instead (Section 5.4).")
-        top_features = importances.sort_values(ascending=False).head(6)
-        rows = []
-        for feat in top_features.index:
-            val = X_input.iloc[0][feat]
-            rows.append({"Feature": feat, imp_col: round(top_features[feat], 3),
-                         "This customer": round(val, 2) if isinstance(val, (int, float, np.integer, np.floating)) else val})
-        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
-        st.caption(imp_note + " Global ranking, not a per-prediction SHAP explanation (future work).")
-
-        # all four models on this customer
-        st.markdown("##### All four models — churn probability for this customer")
-        all_probs = {n: float(mm.predict_proba(X_input_scaled)[0, 1]) * 100 for n, mm in models.items()}
-        pdf = pd.DataFrame({"Model": list(all_probs), "Churn probability (%)": list(all_probs.values())})
-        mc1, mc2 = st.columns([2, 1])
-        with mc1:
-            st.dataframe(
-                pdf.style.format({"Churn probability (%)": "{:.1f}"})
-                   .background_gradient(cmap="Reds", subset=["Churn probability (%)"]),
-                hide_index=True, width="stretch")
-        with mc2:
-            spread = max(all_probs.values()) - min(all_probs.values())
-            st.metric("Model agreement spread", f"{spread:.1f} pp",
-                      help="Range between the most and least alarmed model. A wide spread means "
-                           "the models disagree about this customer.")
-        with st.expander("Show raw model input (debug)"):
-            st.dataframe(X_input.T, width="stretch")
-    else:
-        st.info("Adjust the profile above, then click **Predict Churn Risk**. "
-                "Use the sidebar presets to jump to the highest- or lowest-risk segment "
-                "identified in the report.")
+    render_prediction(gender, senior_citizen, partner, dependents, tenure, contract,
+                      paperless_billing, payment_method, monthly_charges, total_charges,
+                      phone_service, multiple_lines, internet_service, addon_vals,
+                      model_name, model, models, feature_columns, scaler)
 
 # ======================================================================
 # TAB 2 — DATA ANALYSIS  (report Sections 2-3, every analysis, computed live)
@@ -654,7 +722,9 @@ with tab_analysis:
             st.markdown("**Target distribution (Table)**")
             st.dataframe(target_df, width="stretch")
         with c2:
-            show_fig(epl.plot_target_distribution(df_eda))
+            st.markdown("**Figure 1 — Target Distribution (Chart)**")
+            st.plotly_chart(pc.plot_target_distribution_plotly(df_eda),
+                            width="stretch", key="target_dist_chart")
 
         st.markdown("**Table 4 — Summary statistics for numerical features**")
         summary_cols = ["tenure", "MonthlyCharges", "TotalCharges", "SeniorCitizen"]
@@ -676,10 +746,13 @@ with tab_analysis:
         with u1:
             st.dataframe(eda.churn_rate_by_category(df_eda, pick_col), width="stretch")
         with u2:
-            show_fig(epl.plot_churn_rate_by_category(df_eda, pick_col))
+            st.markdown(f"**Churn rate by {pick_col}**")
+            st.plotly_chart(pc.plot_churn_rate_by_category_plotly(df_eda, pick_col),
+                            width="stretch", key="churn_by_cat_chart")
 
         st.markdown("**All categorical features at once (Figure 2a)**")
-        show_fig(epl.plot_churn_rate_small_multiples(df_eda))
+        st.plotly_chart(pc.plot_churn_rate_small_multiples_plotly(df_eda),
+                        width="stretch", key="small_multiples_chart")
         st.markdown(
             '<div class="finding">Month-to-month churns at <b>42.7%</b> vs <b>2.8%</b> for two-year '
             '(15x gap). Electronic-check (manual) payers churn at <b>45.3%</b> vs 15-17% for automatic '
@@ -688,9 +761,11 @@ with tab_analysis:
         st.markdown("**Numeric features by churn class — distributions (Figure 2b) & boxplots (Figure 2c)**")
         n1, n2 = st.columns(2)
         with n1:
-            show_fig(epl.plot_numeric_distributions_by_churn(df_eda))
+            st.plotly_chart(pc.plot_numeric_distributions_by_churn_plotly(df_eda),
+                            width="stretch", key="numeric_dist_chart")
         with n2:
-            show_fig(epl.plot_numeric_boxplots_by_churn(df_eda))
+            st.plotly_chart(pc.plot_numeric_boxplots_by_churn_plotly(df_eda),
+                            width="stretch", key="numeric_box_chart")
 
     # -- 2.6 Engineered feature audit -----------------------------------
     with da_engineered:
@@ -701,10 +776,12 @@ with tab_analysis:
         e1, e2 = st.columns([1, 1])
         with e1:
             st.markdown("**Figure 4 — Correlation of numeric/engineered features with churn**")
-            show_fig(epl.plot_correlation_with_target(df_eda))
+            st.plotly_chart(pc.plot_correlation_with_target_plotly(df_eda, epl.CORR_COLS),
+                            width="stretch", key="corr_target_chart")
         with e2:
-            st.markdown("**Figure 4a — Correlation heatmap**")
-            show_fig(epl.plot_correlation_heatmap(df_eda))
+            st.markdown("**Figure 4a — Correlation heatmap** (interactive — hover for exact r)")
+            st.plotly_chart(pc.plot_correlation_heatmap_plotly(df_eda, epl.CORR_COLS),
+                            width="stretch", key="corr_heatmap")
         st.markdown(
             '<div class="finding green"><b>ChargesToTenureRatio (r=0.412)</b> and '
             '<b>ContractRiskScore (r=0.397)</b> beat every raw numeric column — the direct, data-driven '
@@ -715,7 +792,8 @@ with tab_analysis:
         with f1:
             st.dataframe(eda.churn_rate_by_category(df_eda, "TenureGroup"), width="stretch")
         with f2:
-            show_fig(epl.plot_churn_rate_by_tenuregroup(df_eda))
+            st.plotly_chart(pc.plot_churn_rate_by_tenuregroup_plotly(df_eda),
+                            width="stretch", key="tenuregroup_chart")
 
         st.markdown("**2.6.2 — TotalServicesSubscribed: a non-monotonic pattern**")
         st.dataframe(eda.churn_rate_by_category(df_eda, "TotalServicesSubscribed"), width="stretch")
@@ -741,10 +819,10 @@ with tab_analysis:
         i1, i2 = st.columns(2)
         with i1:
             st.markdown("**Figure 5 — Contract × payment automation**")
-            show_fig(epl.plot_interaction_heatmap(
+            st.plotly_chart(pc.plot_interaction_heatmap_plotly(
                 df_eda, "Contract", "IsAutoPay",
-                row_order=["Month-to-month", "One year", "Two year"],
-                title="Churn Rate (%) by Contract x Payment Automation"))
+                row_order=["Month-to-month", "One year", "Two year"]),
+                width="stretch", key="contract_autopay_chart")
             st.markdown(
                 '<div class="finding"><b>Month-to-month + manual pay = 46.5%</b>, the highest-risk '
                 'segment in the dataset. Two-year churns at 2.8-2.9% regardless of payment method — '
@@ -752,7 +830,8 @@ with tab_analysis:
                 unsafe_allow_html=True)
         with i2:
             st.markdown("**Figure 5b — Tenure group × number of services**")
-            show_fig(epl.plot_tenure_service_interaction(df_eda))
+            st.plotly_chart(pc.plot_tenure_service_interaction_plotly(df_eda),
+                            width="stretch", key="tenure_service_chart")
             st.markdown(
                 '<div class="finding blue">Within <b>every</b> tenure band, churn <b>rises</b> with '
                 'service count — the opposite of the raw pattern in 2.6.2. First-year customers with '
@@ -775,7 +854,8 @@ with tab_analysis:
                     .background_gradient(cmap="Reds", subset=["cramers_v"]),
                 hide_index=True, width="stretch", height=420)
         with s2:
-            show_fig(epl.plot_cramers_v(chi_df))
+            st.markdown("**Figure 5a — Cramer's V association strength**")
+            st.plotly_chart(pc.plot_cramers_v_plotly(chi_df), width="stretch", key="cramers_v_chart")
 
         st.markdown(
             '<div class="finding">Every categorical feature rejects independence from churn at '
@@ -834,16 +914,13 @@ with tab_analysis:
         vif_df = compute_vif_table(tuple(feature_columns))
         v1, v2 = st.columns([1, 1])
         with v1:
+            st.markdown("**VIF table (all 23 predictors)**")
             st.dataframe(vif_df.style.format({"VIF": "{:.2f}"})
                         .background_gradient(cmap="Reds", subset=["VIF"]),
                        hide_index=True, width="stretch", height=520)
         with v2:
-            fig, ax = plt.subplots(figsize=(6, 8))
-            top = vif_df.sort_values("VIF").tail(15)
-            ax.barh(top["feature"], top["VIF"], color=BLUE)
-            ax.axvline(10, color=RED, linestyle="--", linewidth=1, label="concern threshold (10)")
-            ax.set_xlabel("VIF"); ax.legend(fontsize=8); plt.tight_layout()
-            show_fig(fig)
+            st.markdown("**VIF chart — top 15 by value**")
+            st.plotly_chart(pc.plot_vif_plotly(vif_df), width="stretch", key="vif_chart")
         st.markdown(
             f'<div class="finding">Final max VIF ≈ <b>{vif_df["VIF"].max():.1f}</b> '
             f'({vif_df.iloc[0]["feature"]}), down from a worst case of 2,346 partway through the '
@@ -882,18 +959,22 @@ with tab_models:
                         "F1": "{:.2f}", "AUC": "{:.3f}"})
                 .highlight_max(axis=0, props=f"background-color:{LIGHT};font-weight:700;"),
             width="stretch")
-        show_fig(ev.plot_model_comparison_bar(results_df))
+        st.markdown("**Figure 8 — Model Performance Comparison**")
+        st.plotly_chart(pc.plot_model_comparison_plotly(results_df), width="stretch",
+                        key="model_comparison_chart")
 
     # -- 5.6 ROC / PR curves -----------------------------------------------
     with mo_curves:
         sec("5.2 / 5.6", "ROC Curves & Precision-Recall Curves")
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown("**Figure 6 — ROC curves**")
-            show_fig(ev.plot_roc_curves(models, X_test_scaled, y_test))
+            st.markdown("**Figure 6 — ROC curves** (interactive — hover for exact threshold)")
+            st.plotly_chart(pc.plot_roc_curves_plotly(models, X_test_scaled, y_test),
+                            width="stretch", key="roc_chart")
         with c2:
             st.markdown("**Figure 11 — Precision-Recall curves**")
-            show_fig(ev.plot_pr_curves(models, X_test_scaled, y_test))
+            st.plotly_chart(pc.plot_pr_curves_plotly(models, X_test_scaled, y_test),
+                            width="stretch", key="pr_chart")
         st.markdown(
             '<div class="finding blue">ROC-AUC ranks Random Forest first, but Average Precision '
             '(more informative on an imbalanced target) ranks Logistic Regression marginally ahead '
@@ -902,8 +983,10 @@ with tab_models:
 
     # -- 5.2 Confusion matrices ---------------------------------------------
     with mo_confuse:
-        sec("5.2", "Confusion Matrices", "Figure 7 — test set, n = 1,409.")
-        show_fig(ev.plot_confusion_matrices(models, X_test_scaled, y_test))
+        sec("5.2", "Confusion Matrices", "Test set, n = 1,409.")
+        st.markdown("**Figure 7 — Confusion Matrices (all four models)**")
+        st.plotly_chart(pc.plot_confusion_matrices_plotly(models, X_test_scaled, y_test),
+                        width="stretch", key="confusion_chart")
 
     # -- 5.3-5.4 Feature importance / LR coefficients ------------------------
     with mo_importance:
@@ -912,11 +995,13 @@ with tab_models:
         with i1:
             st.markdown("**Figure 9 — Random Forest top-10 importance**")
             rf_imp = ev.get_feature_importance(models["Random Forest"], feature_columns)
-            show_fig(ev.plot_feature_importance(rf_imp, title="Random Forest — Top 10 Feature Importance"))
+            st.plotly_chart(pc.plot_feature_importance_plotly(rf_imp),
+                            width="stretch", key="rf_importance_chart")
         with i2:
             st.markdown("**XGBoost top-10 importance**")
             xgb_imp = ev.get_feature_importance(models["XGBoost"], feature_columns)
-            show_fig(ev.plot_feature_importance(xgb_imp, title="XGBoost — Top 10 Feature Importance"))
+            st.plotly_chart(pc.plot_feature_importance_plotly(xgb_imp),
+                            width="stretch", key="xgb_importance_chart")
         st.markdown(
             f'<div class="finding green">ChargesToTenureRatio leads Random Forest '
             f'(<b>{rf_imp.iloc[0]:.3f}</b>); ContractRiskScore dominates XGBoost '
@@ -942,32 +1027,55 @@ with tab_models:
 
     # -- 5.8 Overfitting check --------------------------------------------------
     with mo_overfit:
-        sec("5.8", "Overfitting Check", "Figure 10 — Train F1 (SMOTE-balanced) vs Test F1 (natural imbalance).")
+        sec("5.8", "Overfitting Check", "Train F1 (SMOTE-balanced) vs Test F1 (natural imbalance).")
         overfit_df = ev.overfitting_check(models, X_train_sm, y_train_sm, X_test_scaled, y_test)
         oc1, oc2 = st.columns([1, 1])
         with oc1:
+            st.markdown("**Overfitting table**")
             st.dataframe(overfit_df.style.format("{:.3f}").background_gradient(cmap="Reds", subset=["Gap"]),
                        width="stretch")
         with oc2:
-            show_fig(ev.plot_overfit_check(overfit_df))
+            st.markdown("**Figure 10 — Train vs Test F1**")
+            st.plotly_chart(pc.plot_overfit_check_plotly(overfit_df),
+                            width="stretch", key="overfit_chart")
         st.caption("An initial unconstrained Random Forest overfit severely (train F1 0.999 vs test 0.584); "
                   "regularised GridSearchCV settings shrink this gap while improving test F1 (Section 4.2/5.8).")
 
     # -- 5.7 Threshold tuning ------------------------------------------------------
-    with mo_threshold:
+    @st.fragment
+    def render_threshold_tab(models, X_test_scaled, y_test, default_model_name):
         sec("5.7", "Threshold Tuning", "Sweeping the classification threshold away from the 0.5 default.")
         thr_model_name = st.selectbox("Model to sweep", list(models.keys()),
-                                      index=list(models.keys()).index(model_name), key="thr_model")
-        thr_df = ev.threshold_tuning(models[thr_model_name], X_test_scaled, y_test)
+                                      index=list(models.keys()).index(default_model_name), key="thr_model")
         opt = ev.optimal_threshold(models[thr_model_name], X_test_scaled, y_test)
         t1, t2, t3 = st.columns(3)
         t1.metric("F1-optimal threshold", f"{opt['threshold']:.2f}")
         t2.metric("F1 at optimum", f"{opt['f1']:.3f}")
         t3.metric("Recall at optimum", f"{opt['recall']:.3f}")
-        show_fig(ev.plot_threshold_curve(models, X_test_scaled, y_test, model_names_to_plot=list(models.keys())))
+
+        st.markdown("**🎚️ Explore any threshold live**")
+        explore_thr = st.slider("Classification threshold", 0.10, 0.90, float(opt["threshold"]),
+                                step=0.02, key="explore_thr",
+                                help="Drag to see Precision/Recall/F1 update live, and the marker "
+                                     "line move on the chart below.")
+        live = pc.metrics_at_threshold(models[thr_model_name], X_test_scaled, y_test, explore_thr)
+        l1, l2, l3 = st.columns(3)
+        l1.metric("Precision @ threshold", f"{live['precision']:.3f}")
+        l2.metric("Recall @ threshold", f"{live['recall']:.3f}")
+        l3.metric("F1 @ threshold", f"{live['f1']:.3f}")
+
+        st.markdown("**Figure 13 — F1-score vs Classification Threshold**")
+        st.plotly_chart(
+            pc.plot_threshold_curve_plotly(models, X_test_scaled, y_test,
+                                           model_names_to_plot=list(models.keys()),
+                                           marker_threshold=explore_thr),
+            width="stretch", key="threshold_chart")
         st.caption("5.7/5.9 — Churn prediction has an asymmetric cost (a missed churner costs far more "
                   "than a false alarm), so operating below the default 0.5 threshold can trade a little "
                   "Precision for meaningfully higher Recall without retraining anything.")
+
+    with mo_threshold:
+        render_threshold_tab(models, X_test_scaled, y_test, model_name)
 
     # -- 4.3 Cross-validation --------------------------------------------------
     with mo_cv:
