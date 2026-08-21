@@ -83,6 +83,60 @@ def kfold_cv_all_models(X_train_scaled, y_train, model_builders: dict, n_splits:
     return pd.DataFrame(rows).T
 
 
+def mcnemar_test(model_a, model_b, X_test, y_test) -> dict:
+    """
+    Report Section 5.9 — McNemar's test on a single pair of models over the same
+    test set. Tests whether two classifiers' *disagreements* are asymmetric (one
+    model right where the other is wrong, more often in one direction than the
+    other) rather than whether their overall accuracy differs — the correct test
+    when both models are evaluated on the identical hold-out set, since their
+    predictions are paired observations, not independent samples.
+
+    Uses the exact binomial variant when b + c < 25 (the discordant-pair count is
+    small enough that the chi-square approximation is unreliable), continuity-
+    corrected chi-square otherwise — both via statsmodels, which is already a
+    project dependency (src/eda.py uses it for VIF).
+    """
+    from statsmodels.stats.contingency_tables import mcnemar as _mcnemar
+
+    pred_a = model_a.predict(X_test)
+    pred_b = model_b.predict(X_test)
+    correct_a = (pred_a == y_test).astype(int)
+    correct_b = (pred_b == y_test).astype(int)
+
+    # b = A right, B wrong; c = A wrong, B right (the two discordant cells)
+    b = int(((correct_a == 1) & (correct_b == 0)).sum())
+    c = int(((correct_a == 0) & (correct_b == 1)).sum())
+    table = [[0, b], [c, 0]]  # diagonal (both-right / both-wrong counts) doesn't affect the test
+    result = _mcnemar(table, exact=(b + c < 25), correction=True)
+
+    return {
+        "b_A_right_B_wrong": b,
+        "c_A_wrong_B_right": c,
+        "statistic": float(result.statistic),
+        "p_value": float(result.pvalue),
+        "significant_(p<0.05)": bool(result.pvalue < 0.05),
+    }
+
+
+def mcnemar_all_pairs(models: dict, X_test, y_test) -> pd.DataFrame:
+    """
+    Report Section 5.9 — McNemar's test for every pair among the four models, to
+    check whether Section 5.2's Random Forest ranking is statistically distinct
+    from the other three or within the noise band the Discussion flagged as an
+    open question. Returns one row per pair, sorted by p-value (most significant
+    difference first).
+    """
+    names = list(models.keys())
+    rows = []
+    for i in range(len(names)):
+        for j in range(i + 1, len(names)):
+            a, b_name = names[i], names[j]
+            r = mcnemar_test(models[a], models[b_name], X_test, y_test)
+            rows.append({"model_A": a, "model_B": b_name, **r})
+    return pd.DataFrame(rows).sort_values("p_value").reset_index(drop=True)
+
+
 def get_feature_importance(model, feature_names) -> pd.Series:
     """Report Section 5.3 — feature importances for a tree-based model."""
     return pd.Series(model.feature_importances_, index=feature_names).sort_values(ascending=False)
