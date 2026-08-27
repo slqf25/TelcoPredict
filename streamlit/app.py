@@ -76,17 +76,17 @@ CONTRACT_RISK = {"Month-to-month": 2, "One year": 1, "Two year": 0}
 
 # Demo presets — grounded in the report's findings (Sections 2.5 / 2.7)
 PRESETS = {
-    "🔥 Highest-risk segment": dict(
+    "Highest-risk segment": dict(
         gender="Female", senior="No", partner="No", dependents="No", tenure=2,
         contract="Month-to-month", paperless="Yes", payment="Electronic check",
         monthly=95.0, phone="Yes", lines="No", internet="Fiber optic",
         addons={c: "No" for c in ADDON_SERVICES}),
-    "🛡️ Lowest-risk segment": dict(
+    "Lowest-risk segment": dict(
         gender="Male", senior="No", partner="Yes", dependents="Yes", tenure=68,
         contract="Two year", paperless="No", payment="Credit card (automatic)",
         monthly=62.0, phone="Yes", lines="Yes", internet="DSL",
         addons={c: "Yes" for c in ADDON_SERVICES}),
-    "📊 Dataset average": dict(
+    "Dataset average": dict(
         gender="Female", senior="No", partner="No", dependents="No", tenure=32,
         contract="Month-to-month", paperless="Yes", payment="Electronic check",
         monthly=64.5, phone="Yes", lines="No", internet="Fiber optic",
@@ -428,7 +428,7 @@ with st.sidebar:
 model = models[model_name]
 
 tab_pred, tab_analysis, tab_models = st.tabs(
-    ["🔮 Predict", "📊 Data Analysis", "🤖 Models"]
+    ["Predict", "Data Analysis", "Models"]
 )
 
 # ======================================================================
@@ -440,7 +440,7 @@ with tab_pred:
     # toggling Internet Service to "No" would leave the add-ons looking "open"
     # (interactable) until the form is submitted. Live widgets keep every
     # relationship between inputs visible as they are edited.
-    with st.expander("ℹ️  How these inputs relate to each other (read before entering data)", expanded=False):
+    with st.expander("How these inputs relate to each other (read before entering data)", expanded=False):
         st.markdown("""
 **Tenure ↔ Contract Type** — these are *correlated but not constrained*. `Contract` is the customer's
 **current** contract, not a lifetime commitment. In the real data **1,144 customers are on
@@ -601,7 +601,7 @@ features: `ContractRiskScore` (Month-to-month = 2, One year = 1, Two year = 0) a
                           paperless_billing, payment_method, monthly_charges, total_charges,
                           phone_service, multiple_lines, internet_service, addon_vals,
                           model_name, model, models, feature_columns, scaler):
-        predict_clicked = st.button(f"🔮  Predict Churn Risk  ·  {model_name}",
+        predict_clicked = st.button(f"Predict Churn Risk  ·  {model_name}",
                                     width="stretch", type="primary")
 
         if predict_clicked:
