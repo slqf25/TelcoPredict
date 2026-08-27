@@ -101,6 +101,19 @@ st.set_page_config(page_title="Telco Churn Predictor", page_icon="📡", layout=
 # ----------------------------------------------------------------------
 st.markdown(f"""
 <style>
+  /* Reduce top padding / space */
+  .block-container {{
+      padding-top: 1.5rem !important;
+      padding-bottom: 0rem !important;
+  }}
+  [data-testid="stSidebarUserContent"] {{
+      padding-top: 1.5rem !important;
+  }}
+  [data-testid="stHeader"] {{
+      height: 2rem !important;
+      background: transparent !important;
+  }}
+
   /* Dynamic Background */
   .stApp {{
       background: radial-gradient(circle at 15% 50%, rgba(64, 156, 255, 0.08), transparent 40%),
