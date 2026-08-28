@@ -18,10 +18,10 @@ Three tabs:
 import os
 import sys
 import pickle
+import time
 
 import matplotlib
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -30,6 +30,8 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _SRC = os.path.abspath(os.path.join(_HERE, "..", "src"))
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
 
 from train_model import (  # noqa: E402  (local prototype module, mirrors src/data_prep.py)
     engineer_and_clean,
@@ -48,11 +50,17 @@ from sklearn.tree import DecisionTreeClassifier  # noqa: E402
 from sklearn.ensemble import RandomForestClassifier  # noqa: E402
 from xgboost import XGBClassifier  # noqa: E402
 
-DEFAULT_MODEL = "Random Forest"  # recommended model, report Section 5.9
+# Visual design system (colours, icon maps, CSS, HTML/markdown helpers) lives
+# in ui_style.py — keeps this file focused on data wiring + page flow.
+from ui_style import (  # noqa: E402
+    NAVY, BLUE, LIGHT, RED, GREEN, AMBER,
+    MODEL_ICON, TIER_INFO,
+    inject_css, sec, show_fig, signal_bars_html, mi,
+    lerp_color,
+)
+from tower_3d import render_tower_3d  # noqa: E402
 
-# Report palette (Section colours) — shared with eda_plots.py / evaluation.py
-NAVY, BLUE, LIGHT, RED = "#1F4E79", "#2E75B6", "#9DC3E6", "#C00000"
-GREEN, AMBER = "#2E8B57", "#E8A317"
+DEFAULT_MODEL = "Random Forest"  # recommended model, report Section 5.9
 
 # Hold-out test metrics (report Section 5.2) — cross-checked against models.pkl
 # on the true test split; kept as a display cache so the Predict-tab sidebar
@@ -64,14 +72,17 @@ TEST_METRICS = {
     "XGBoost":             dict(Accuracy=75.23, Precision=52.40, Recall=72.99, F1=61.01, AUC=0.830),
 }
 MODEL_ROLE = {
-    "Logistic Regression": "Linear baseline — interpretable coefficients, fast, the reference model.",
-    "Decision Tree": "Single readable if-then tree — fully transparent, highest recall (77%).",
-    "Random Forest": "200-tree bagged ensemble — best overall (recommended default).",
-    "XGBoost": "Gradient-boosted ensemble — strong, regularised via GridSearchCV.",
+    "Logistic Regression": "Linear baseline, interpretable.",
+    "Decision Tree": "Readable tree, highest recall.",
+    "Random Forest": "Best overall — recommended.",
+    "XGBoost": "Gradient-boosted, strong.",
 }
 
 ADDON_SERVICES = ["OnlineSecurity", "OnlineBackup", "DeviceProtection",
                   "TechSupport", "StreamingTV", "StreamingMovies"]
+ADDON_LABELS = {"OnlineSecurity": "Online Security", "OnlineBackup": "Online Backup",
+                "DeviceProtection": "Device Protection", "TechSupport": "Tech Support",
+                "StreamingTV": "Streaming TV", "StreamingMovies": "Streaming Movies"}
 CONTRACT_RISK = {"Month-to-month": 2, "One year": 1, "Two year": 0}
 
 # Demo presets — grounded in the report's findings (Sections 2.5 / 2.7)
@@ -97,155 +108,16 @@ st.set_page_config(page_title="Telco Churn Predictor", page_icon="📡", layout=
                    initial_sidebar_state="expanded")
 
 # ----------------------------------------------------------------------
-# Styling
+# Styling — full CSS + visual helpers live in ui_style.py
 # ----------------------------------------------------------------------
-st.markdown(f"""
-<style>
-  /* Reduce top padding / space */
-  .block-container {{
-      padding-top: 1.5rem !important;
-      padding-bottom: 0rem !important;
-  }}
-  [data-testid="stSidebarUserContent"] {{
-      padding-top: 1.5rem !important;
-  }}
-  [data-testid="stHeader"] {{
-      height: 2rem !important;
-      background: transparent !important;
-  }}
-
-  /* Dynamic Background */
-  .stApp {{
-      background: radial-gradient(circle at 15% 50%, rgba(64, 156, 255, 0.08), transparent 40%),
-                  radial-gradient(circle at 85% 30%, rgba(255, 105, 180, 0.08), transparent 40%);
-      background-attachment: fixed;
-  }}
-  
-  /* Apple Glassmorphism Banner */
-  .app-banner {{
-    background: color-mix(in srgb, var(--primary-color) 12%, transparent);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid color-mix(in srgb, var(--text-color) 8%, transparent);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.04);
-    color: var(--text-color);
-    padding: 24px 32px; 
-    border-radius: 24px; /* Squircle */
-    margin-bottom: 12px;
-  }}
-  .app-banner .t {{ font-size: 1.8rem; font-weight: 800; letter-spacing:-0.5px; }}
-  .app-banner .s {{ opacity:.75; font-size:1.0rem; margin-top:6px; font-weight: 400; }}
-  
-  /* Buttons */
-  .stButton > button {{
-      border-radius: 16px !important; /* Squircle */
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      transition: all 0.2s ease-in-out;
-  }}
-  .stButton > button:hover {{
-      transform: scale(1.02);
-  }}
-
-  /* Inputs (Squircles) */
-  .stSelectbox > div > div, 
-  .stTextInput > div > div, 
-  .stNumberInput > div > div,
-  .stSlider > div > div {{
-      border-radius: 16px !important;
-  }}
-
-  /* Metric Cards */
-  [data-testid="stMetric"] {{
-      background: color-mix(in srgb, var(--background-color) 40%, transparent);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid color-mix(in srgb, var(--text-color) 8%, transparent);
-      border-radius: 20px;
-      padding: 16px 20px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
-  }}
-  div[data-testid="stMetricValue"] {{ color: var(--text-color); font-weight: 700; letter-spacing: -0.5px; }}
-  
-  /* Sidebar */
-  [data-testid="stSidebar"] {{
-      background: color-mix(in srgb, var(--secondary-background-color) 60%, transparent) !important;
-      backdrop-filter: blur(30px);
-      -webkit-backdrop-filter: blur(30px);
-      border-right: 1px solid color-mix(in srgb, var(--text-color) 8%, transparent);
-  }}
-
-  /* DataFrames */
-  [data-testid="stDataFrame"] {{
-      border-radius: 16px !important;
-      overflow: hidden;
-      border: 1px solid color-mix(in srgb, var(--text-color) 8%, transparent);
-  }}
-
-  /* Badges & Gauges */
-  .risk-badge {{ display:inline-block; padding:10px 24px; border-radius:16px;
-    font-weight:700; font-size:1.15rem; color:#fff; letter-spacing:.2px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.1); }}
-  .gauge {{ height:16px; background: color-mix(in srgb, var(--text-color) 10%, transparent); 
-    border-radius:16px; overflow:hidden; margin:8px 0 4px; }}
-  .gauge-fill {{ height:100%; border-radius:16px; transition:width 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }}
-  
-  /* Glass Findings */
-  .finding {{ border-left: 6px solid {RED}; background:{RED}15; border-radius: 0 20px 20px 0;
-    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-    padding:16px 20px; margin:12px 0; box-shadow: 0 4px 20px rgba(0,0,0,0.02); }}
-  .finding.blue {{ border-left-color:{BLUE}; background:{BLUE}15; }}
-  .finding.green {{ border-left-color:{GREEN}; background:{GREEN}15; }}
-  
-  .secnote {{ color: var(--text-color); opacity: 0.6; font-size:.95rem; margin:-4px 0 12px; }}
-  .stTabs [data-baseweb="tab"] {{ font-size:1.05rem; font-weight:600; border-radius: 12px 12px 0 0; }}
-
-  /* Chart entrance animation — every Plotly AND matplotlib figure fades/slides in on
-     first render, so switching tabs or triggering a recompute feels alive rather than
-     a static image just appearing. */
-  [data-testid="stPlotlyChart"], [data-testid="stImage"] {{
-      animation: fadeSlideIn 0.6s ease-out;
-  }}
-  @keyframes fadeSlideIn {{
-      from {{ opacity: 0; transform: translateY(14px); }}
-      to   {{ opacity: 1; transform: translateY(0); }}
-  }}
-
-  /* High-risk badge pulses to draw the eye; low/medium stay static (calmer states) */
-  .risk-badge.pulse {{ animation: pulseGlow 1.6s ease-in-out infinite; }}
-  @keyframes pulseGlow {{
-      0%, 100% {{ box-shadow: 0 4px 16px rgba(192,0,0,0.25); transform: scale(1); }}
-      50%      {{ box-shadow: 0 4px 28px rgba(192,0,0,0.55); transform: scale(1.03); }}
-  }}
-
-  /* Finding callouts slide in from the left */
-  .finding {{ animation: slideInLeft 0.5s ease-out; }}
-  @keyframes slideInLeft {{
-      from {{ opacity: 0; transform: translateX(-10px); }}
-      to   {{ opacity: 1; transform: translateX(0); }}
-  }}
-</style>
-""", unsafe_allow_html=True)
+inject_css()
 
 st.markdown(
-    '<div class="app-banner"><div class="t">📡 Telco Customer Churn Predictor</div>'
-    '<div class="s">BMDS2003 · Group 6 · CRISP-DM prototype — predict churn, explore every '
-    'analysis behind the model, compare all four models</div></div>',
+    '<div class="app-banner"><div class="t">Telco Customer Churn Predictor</div>'
+    '<div class="s">Predict churn risk, explore the analysis behind the model, '
+    'and compare all four models side by side</div></div>',
     unsafe_allow_html=True,
 )
-
-
-def sec(number, title, note=None):
-    """Section header matching the report's numbering, so the app reads as a live
-    companion to the write-up rather than a disconnected demo."""
-    st.markdown(f"### {number}  {title}")
-    if note:
-        st.markdown(f'<p class="secnote">{note}</p>', unsafe_allow_html=True)
-
-
-def show_fig(fig):
-    st.pyplot(fig, width="stretch")
-    plt.close(fig)
 
 
 # ----------------------------------------------------------------------
@@ -382,30 +254,41 @@ def compute_vif_table(feature_columns):
 models, scaler, feature_columns = load_artifacts()
 
 # ----------------------------------------------------------------------
-# Sidebar — global model selector + context
+# Top control strip — model selector + demo presets, above all 3 tabs (was a
+# sidebar). Only the Predict tab actually consumes model_name for its
+# prediction/importance display; Data Analysis is model-agnostic and the
+# Models tab's sub-tabs each pick their own model (or show all 4 at once), so
+# there's nothing here that truly needs a permanent side column — putting it
+# in the normal page flow gives the 3-tab layout its width back.
 # ----------------------------------------------------------------------
-with st.sidebar:
-    st.markdown("### ⚙️ Model")
-    model_name = st.selectbox(
-        "Prediction model", list(models.keys()),
-        index=list(models.keys()).index(DEFAULT_MODEL),
-        help="Random Forest is the recommended default (report Section 5.9). "
-             "All four trained models are selectable for comparison.",
-    )
+top1, top2, top3 = st.columns([1.1, 1.6, 1.1])
+with top1:
+    st.markdown("**Model**")
+    # 4 stacked click-cards instead of a dropdown — Test-set performance (2 rows)
+    # and Demo presets (3 rows) both run taller than a single-line select ever
+    # would, so a dropdown left this column mostly empty air; this fills it and
+    # keeps every model visible (and its role readable) without an extra click.
+    model_name = st.session_state.setdefault("in_model", DEFAULT_MODEL)
+    for _name in models.keys():
+        if st.button(f":material/{MODEL_ICON[_name]}: {_name}", key=f"modelsel_{_name}",
+                    width="stretch",
+                    type=("primary" if _name == model_name else "secondary")):
+            st.session_state["in_model"] = _name
+            st.rerun()
     st.caption(MODEL_ROLE[model_name])
 
-    m = TEST_METRICS[model_name]
+with top2:
     st.markdown("**Test-set performance**")
-    sc1, sc2 = st.columns(2)
-    sc1.metric("Accuracy", f"{m['Accuracy']:.1f}%")
-    sc2.metric("Recall", f"{m['Recall']:.1f}%")
-    sc3, sc4 = st.columns(2)
-    sc3.metric("F1", f"{m['F1']:.1f}%")
-    sc4.metric("AUC", f"{m['AUC']:.3f}")
+    m = TEST_METRICS[model_name]
+    mc1, mc2 = st.columns(2)
+    mc1.metric("Accuracy", f"{m['Accuracy']:.1f}%")
+    mc2.metric("Recall", f"{m['Recall']:.1f}%")
+    mc3, mc4 = st.columns(2)
+    mc3.metric("F1", f"{m['F1']:.1f}%")
+    mc4.metric("AUC", f"{m['AUC']:.3f}")
 
-    st.divider()
-    st.markdown("### 🎬 Demo presets")
-    st.caption("Load a profile grounded in the report's findings.")
+with top3:
+    st.markdown("**Demo presets**")
     for label in PRESETS:
         if st.button(label, width="stretch", key=f"preset_{label}"):
             p = PRESETS[label]
@@ -415,15 +298,13 @@ with st.sidebar:
                         st.session_state[f"in_{c}"] = val
                 else:
                     st.session_state[f"in_{k}"] = v
-            st.session_state["in_auto_total"] = True
+            st.session_state["in_auto_total_mode"] = "Auto"
+            # Tell the browser-side profile cache this is an intentional
+            # server override, not a stale default arriving after an edit.
+            # Microseconds remain exactly representable in JavaScript while
+            # still making consecutive preset overrides unambiguous.
+            st.session_state["tower_3d_override_nonce"] = time.time_ns() // 1_000
             st.rerun()
-
-    st.divider()
-    st.caption(
-        "23 predictors after a four-round multicollinearity audit (Section 3.3). "
-        "SMOTE on the training set only; hyperparameters via 5-fold GridSearchCV."
-    )
-    st.caption("Data Analysis and Models tabs run every report analysis live from the src/ package.")
 
 model = models[model_name]
 
@@ -465,44 +346,100 @@ features: `ContractRiskScore` (Month-to-month = 2, One year = 1, Two year = 0) a
         """)
 
     st.markdown('<div class="grp">Customer profile</div>', unsafe_allow_html=True)
-    col1, col2, col3 = st.columns(3)
 
-    with col1:
-        st.markdown("**Demographics**")
-        gender = st.selectbox("Gender", ["Female", "Male"], key="in_gender")
-        senior_citizen = st.selectbox("Senior Citizen", ["No", "Yes"], key="in_senior")
-        partner = st.selectbox("Has Partner", ["No", "Yes"], key="in_partner")
-        dependents = st.selectbox("Has Dependents", ["No", "Yes"], key="in_dependents")
+    # The tower is a two-level navigation map. Six category modules stay visible;
+    # only the selected module's real controls are expanded. This keeps unrelated
+    # demographic, billing, connectivity, and add-on fields from competing in
+    # one undifferentiated cloud.
+    # One full-width canvas: do not wrap the tower and inspector in
+    # st.columns(), which creates the left/right stHorizontalBlock seen in the
+    # rendered DOM. Both phases append to the same vertical panel instead.
+    network_panel = st.container(key="customer_network")
+    col2 = network_panel
+    col3 = network_panel
 
     with col2:
-        st.markdown("**Contract & billing**")
-        tenure = st.slider("Tenure (months)", 0, 72, 12, key="in_tenure",
-                           help="How long the customer has been with the company.")
-        contract = st.selectbox("Contract Type", ["Month-to-month", "One year", "Two year"],
-                                key="in_contract",
-                                help="The customer's CURRENT contract — independent of tenure. "
-                                     "A long-tenured customer can still be month-to-month.")
-        paperless_billing = st.selectbox("Paperless Billing", ["No", "Yes"], key="in_paperless")
-        payment_method = st.selectbox(
-            "Payment Method",
-            ["Electronic check", "Mailed check", "Bank transfer (automatic)", "Credit card (automatic)"],
-            key="in_payment",
-            help="Electronic check and Mailed check are manual; the other two are automatic.")
+        st.markdown(
+            '<div class="tower-title">Interactive customer network</div>',
+            unsafe_allow_html=True,
+        )
+        # Tenure is now a light point too — its slider only appears once you
+        # click it (same click-to-reveal idea as Auto/Manual's number_input),
+        # instead of always taking up a row above the tower.
+        tenure = st.session_state.setdefault("in_tenure", 12)
+        # Read here (not just in col3) so the Monthly Charges light point below
+        # can show the current value — col3 (which owns the authoritative
+        # slider) hasn't run yet at this point in the script.
+        monthly_charges = st.session_state.get("in_monthly", 70.0)
+        _tenure_level = int(pd.cut([tenure], [-1, 12, 24, 48, 60, 200], labels=[1, 2, 3, 4, 5])[0])
+        _tier_label, _gradient = TIER_INFO[_tenure_level]
+        st.caption(f":material/military_tech: {_tier_label} member · {tenure} mo tenure")
+
+        st.caption("Hover to pause the 3D tower, then select an attached equipment pod.")
+
+        # Every value lives in session_state so switching category changes only
+        # what is visible, never the profile already entered.
+        contract = st.session_state.setdefault("in_contract", "Month-to-month")
+        payment_method = st.session_state.setdefault("in_payment", "Electronic check")
+        paperless_billing = st.session_state.setdefault("in_paperless", "No")
+        phone_service = st.session_state.setdefault("in_phone", "Yes")
+        internet_service = st.session_state.setdefault("in_internet", "DSL")
+        multiple_lines = st.session_state.setdefault("in_lines", "No")
+        gender = st.session_state.setdefault("in_gender", "Female")
+        senior_citizen = st.session_state.setdefault("in_senior", "No")
+        partner = st.session_state.setdefault("in_partner", "No")
+        dependents = st.session_state.setdefault("in_dependents", "No")
+        auto_mode = st.session_state.setdefault("in_auto_total_mode", "Auto")
+        addon_vals = {
+            svc: st.session_state.setdefault(f"in_{svc}", "No")
+            for svc in ADDON_SERVICES
+        }
+        tower_values = render_tower_3d({
+            "in_gender": gender,
+            "in_senior": senior_citizen,
+            "in_partner": partner,
+            "in_dependents": dependents,
+            "in_monthly": monthly_charges,
+            "in_auto_total_mode": auto_mode,
+            "in_tenure": tenure,
+            "in_contract": contract,
+            "in_payment": payment_method,
+            "in_paperless": paperless_billing,
+            "in_phone": phone_service,
+            "in_internet": internet_service,
+            "in_lines": multiple_lines,
+            **{f"in_{service}": value for service, value in addon_vals.items()},
+        })
+        gender = tower_values["in_gender"]
+        senior_citizen = tower_values["in_senior"]
+        partner = tower_values["in_partner"]
+        dependents = tower_values["in_dependents"]
+        monthly_charges = tower_values["in_monthly"]
+        auto_mode = tower_values["in_auto_total_mode"]
+        tenure = tower_values["in_tenure"]
+        contract = tower_values["in_contract"]
+        payment_method = tower_values["in_payment"]
+        paperless_billing = tower_values["in_paperless"]
+        phone_service = tower_values["in_phone"]
+        internet_service = tower_values["in_internet"]
+        multiple_lines = tower_values["in_lines"]
+        addon_vals = {service: tower_values[f"in_{service}"] for service in ADDON_SERVICES}
 
     with col3:
-        st.markdown("**Charges**")
-        monthly_charges = st.slider("Monthly Charges (USD)", 18.0, 120.0, 70.0, step=0.5,
-                                    key="in_monthly")
-        auto_total = st.checkbox(
-            "Auto-calculate Total Charges", value=True, key="in_auto_total",
-            help="Total Charges = tenure x Monthly Charges. Accurate for ~95% of real customers; "
-                 "untick to enter a specific billing history.")
+        st.markdown("**Customer inputs & billing**")
+        st.caption("Billing summary updates immediately from the 3D tower controls.")
+        monthly_charges = st.session_state.setdefault("in_monthly", 70.0)
+        auto_mode = st.session_state.get("in_auto_total_mode", "Auto")
+        auto_total = auto_mode == "Auto"
         expected_total = round(tenure * monthly_charges, 2)
+        total_charges = (float(expected_total) if auto_total
+                         else st.session_state.get("in_total_manual", expected_total))
         if auto_total:
-            total_charges = float(expected_total)
-            st.metric("Total Charges (USD)", f"${total_charges:,.2f}",
-                      help="tenure x Monthly Charges")
-        else:
+            st.metric("Total Charges (USD)", f"${total_charges:,.2f}", help="tenure x Monthly Charges")
+        st.caption(f":material/{'bolt' if auto_mode == 'Auto' else 'edit'}: **{auto_mode}** mode "
+                   "— change this in the Charges module.")
+
+        if not auto_total:
             total_charges = st.number_input(
                 "Total Charges (USD)", min_value=0.0, value=float(expected_total),
                 step=10.0, key="in_total_manual")
@@ -524,43 +461,9 @@ features: `ContractRiskScore` (Month-to-month = 2, One year = 1, Two year = 0) a
             st.caption("🚩 Tenure is 0 but Total Charges is not — the 11 real zero-tenure "
                        "customers all have Total Charges = 0 (Section 3.1).")
 
-    # --- Contract vs tenure plausibility, straight from the data -------------
-    share, churn_ref, counts = contract_tenure_reference()
-    tband = pd.cut([tenure], [-1, 12, 24, 48, 60, 200],
-                   labels=["0-12", "13-24", "25-48", "49-60", "61+"])[0]
-    pct_share = float(share.loc[tband, contract])
-    n_cell = int(counts.loc[tband, contract])
-    obs_churn = float(churn_ref.loc[tband, contract])
-    common = share.loc[tband].idxmax()
-    tone = "green" if pct_share >= 30 else ("amber" if pct_share >= 8 else "blue")
-    st.markdown(
-        f'<div class="finding {tone}">📌 <b>Tenure {tenure} months ({tband}) + {contract}</b> — '
-        f'{pct_share:.1f}% of real customers in this tenure band hold this contract '
-        f'(<b>{n_cell:,} customers</b>), and their observed churn rate is <b>{obs_churn:.1f}%</b>. '
-        f'Most common contract in this band: <b>{common}</b>. '
-        f'All combinations are valid — contract type is the current agreement, not a lifetime lock-in.</div>',
-        unsafe_allow_html=True)
-
     # --- Services -------------------------------------------------------------
-    st.markdown('<div class="grp">Services</div>', unsafe_allow_html=True)
-    s1, s2 = st.columns(2)
-    with s1:
-        phone_service = st.selectbox("Phone Service", ["No", "Yes"], index=1, key="in_phone")
-        multiple_lines = st.selectbox("Multiple Lines", ["No", "Yes"], key="in_lines")
-    with s2:
-        internet_service = st.selectbox("Internet Service", ["DSL", "Fiber optic", "No"],
-                                        key="in_internet")
-
-    st.markdown("**Internet add-on services**")
-    a1, a2, a3 = st.columns(3)
-    addon_vals = {}
-    for i, svc in enumerate(ADDON_SERVICES):
-        label = {"OnlineSecurity": "Online Security", "OnlineBackup": "Online Backup",
-                 "DeviceProtection": "Device Protection", "TechSupport": "Tech Support",
-                 "StreamingTV": "Streaming TV", "StreamingMovies": "Streaming Movies"}[svc]
-        with [a1, a2, a3][i % 3]:
-            addon_vals[svc] = st.selectbox(label, ["No", "Yes"], key=f"in_{svc}")
-
+    # Connection and add-on values are edited in the selected tower control dock;
+    # the notices below explain any dataset-consistency coercion applied later.
     # Coercion notices — the add-ons stay editable, but the model input is made
     # consistent with the dataset's encoding, and the user is told when that happens.
     coerced = []
@@ -578,19 +481,6 @@ features: `ContractRiskScore` (Month-to-month = 2, One year = 1, Two year = 0) a
     if coerced:
         st.markdown('<div class="finding amber">⚠️ ' + "<br>".join(coerced) + "</div>",
                     unsafe_allow_html=True)
-
-    # --- Derived features preview ------------------------------------------------
-    ctr = monthly_charges / (tenure + 1)
-    crs = CONTRACT_RISK[contract]
-    with st.expander("🔧 Engineered features the model derives from these inputs", expanded=False):
-        e1, e2 = st.columns(2)
-        e1.metric("ChargesToTenureRatio", f"{ctr:.2f}",
-                  help="MonthlyCharges / (tenure + 1) — the strongest single predictor "
-                       "(r = 0.412 with churn, Section 2.6.1).")
-        e2.metric("ContractRiskScore", crs,
-                  help="Month-to-month = 2, One year = 1, Two year = 0 (r = 0.397 with churn).")
-        st.caption("These two engineered features outrank every raw column in the tree models' "
-                   "importance rankings (Section 5.3).")
 
     # The button + result block runs as a fragment: clicking Predict only reruns this
     # function, not the whole script (Data Analysis / Models tab computations are
@@ -651,14 +541,38 @@ features: `ContractRiskScore` (Month-to-month = 2, One year = 1, Two year = 0) a
             with r2:
                 st.markdown(f'<div class="{badge_class}" style="background:{risk_color}">{risk_label}</div>',
                             unsafe_allow_html=True)
-                st.markdown(
-                    f'<div class="gauge"><div class="gauge-fill" '
-                    f'style="width:{proba*100:.0f}%;background:{risk_color}"></div></div>',
-                    unsafe_allow_html=True)
-                st.caption("Low < 40%  ·  Medium 40–70%  ·  High > 70%   "
-                           "(dataset base churn rate: 26.5%)")
+                signal_remaining = (1 - proba) * 5
+                st.markdown(signal_bars_html(signal_remaining, risk_color,
+                                             flicker_last=(risk_label == "HIGH RISK")),
+                            unsafe_allow_html=True)
+                if round(signal_remaining) == 0:
+                    st.caption("📵 No signal — this customer reads as effectively gone. "
+                               "Low < 40%  ·  Medium 40–70%  ·  High > 70%   "
+                               "(dataset base churn rate: 26.5%)")
+                else:
+                    st.caption(f"📶 {round(signal_remaining)}/5 bars remaining · "
+                               "Low < 40%  ·  Medium 40–70%  ·  High > 70%   "
+                               "(dataset base churn rate: 26.5%)")
             if risk_label == "LOW RISK":
                 st.balloons()
+
+            # Tenure x Contract plausibility — shown only now, as evidence *for* the
+            # result above, not as a pre-prediction hint at what the answer will be.
+            share, churn_ref, counts = contract_tenure_reference()
+            tband = pd.cut([tenure], [-1, 12, 24, 48, 60, 200],
+                           labels=["0-12", "13-24", "25-48", "49-60", "61+"])[0]
+            pct_share = float(share.loc[tband, contract])
+            n_cell = int(counts.loc[tband, contract])
+            obs_churn = float(churn_ref.loc[tband, contract])
+            common = share.loc[tband].idxmax()
+            tone = "green" if pct_share >= 30 else ("amber" if pct_share >= 8 else "blue")
+            st.markdown(
+                f'<div class="finding {tone}">📌 <b>Tenure {tenure} months ({tband}) + {contract}</b> — '
+                f'{pct_share:.1f}% of real customers in this tenure band hold this contract '
+                f'(<b>{n_cell:,} customers</b>), and their observed churn rate is <b>{obs_churn:.1f}%</b>. '
+                f'Most common contract in this band: <b>{common}</b>. '
+                f'All combinations are valid — contract type is the current agreement, not a lifetime lock-in.</div>',
+                unsafe_allow_html=True)
 
             # top contributing features
             st.markdown("##### Top factors influencing this prediction")

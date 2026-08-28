@@ -1,0 +1,155 @@
+
+
+--- PAGE 1 ---
+TUNKU ABDUL RAHMAN UNIVERSITY OF MANAGEMENT AND TECHNOLOGY
+FACULTY OF COMPUTING AND INFORMATION TECHNOLOGY
+ACADEMIC YEAR 2026/2027
+BMDS2003 DATA SCIENCE
+COURSE NAME : Data Science
+COURSE CODE : BMDS2003
+SESSION : 202605
+TOTAL MARK : 100%
+WEIGHTAGE TO FINAL MARK : 42%
+Group : 3 to 4 members
+SUBMISSION DEADLINE : Week 12 (Monday, 8:30 am)
+PRESENTATION : Weeks 12, 13, and 14
+Learning Outcome Being Assessed:
+CLO1: Apply appropriate data science concepts, statistics, and machine learning to make
+predictions on data (C3, PLO2).
+CLO2: Practice exploratory data analysis and visualisation methods with the aid of appropriate
+data science tools (P3, PLO3).
+CLO3: Analyse relevant techniques, statistical methods, and Machine Learning algorithms for
+data analytics (C4, PLO7).
+
+--- PAGE 2 ---
+Overview
+This assignment requires students to apply the Cross Industry Standard Process for Data Mining
+(CRISP-DM) framework to a selected dataset using Python. The goal is to identify a real-world
+classification or regression problem, apply suitable data science techniques, and produce insights to
+support business decision-making. Students will work in groups of THREE (3) to FOUR (4) to
+complete the project within the 14-week semester. The project must demonstrate the ability to manage
+data, build and evaluate machine learning models, and communicate analytical findings effectively.
+Group Assignment Instructions
+Choose ONE (1) dataset from the list provided for your group assignment. Click the link to download
+the dataset. The following is a list of datasets:
+1. Seoul Bike Sharing Demand
+2. Heart Disease
+3. Online Gaming
+4. Malaysian Condominium Prices Data
+5. Tezpur University Android Malware
+6. Paddy
+7. Productivity of Garment Employees
+8. Apartment Rent
+9. Obesity Levels
+10. Daily Gold Price
+11. Housing Prices in Malaysia
+12. Shill Bidding
+13. Aids Clinical Trials
+14. Diamonds
+15. Telcom Customer Churn
+Important:
+● Each dataset may be selected by only ONE (1) group per tutorial group. FIRST COME,
+FIRST SERVED.
+● You may refer to the Google Spreadsheet provided by your tutor to check dataset availability
+and register your selection.
+● This assignment should cover a wide range of content discussed in the lectures and practical
+sessions.
+1
+
+--- PAGE 3 ---
+Assignment Guidelines
+Section A. Written Report
+Submit a professionally written report in Google Docs format, structured as follows:
+1. Cover Page
+● Project title, course code, group number, and member names and IDs.
+2. Executive Summary (½ page)
+● Brief overview of the project, dataset, and main findings.
+3. Business Understanding
+● Define the business or analytical problem and objectives.
+● Describe the significance and potential business impact.
+4. Data Understanding
+● Describe the dataset source, type, and main features.
+● Load and integrate data from multiple sources where necessary.
+● Include summary statistics and data descriptions.
+5. Data Preparation
+● Clean and transform raw data to prepare it for analysis.
+● Address data quality issues, including handling missing values and outliers.
+● Standardise data formats and enrich source data where necessary.
+● Document the preprocessing steps in the report.
+6. Modelling Requirements
+● Each group must implement at least THREE (3) machine learning models, regardless of the
+number of group members.
+● Groups consisting of FOUR (4) members are required to implement FOUR (4) machine
+learning models.
+● ONE (1) of the selected machine learning models must serve as the baseline model.
+● Comparisons within the same model family (e.g., Decision Tree, Random Forest, Gradient
+Boosting) or between different families (e.g., KNN vs Naïve Bayes) are acceptable.
+● Explain parameter tuning and model configurations.
+● Justify model choice with supporting references (at least two research or technical sources).
+7. Evaluation
+● Present appropriate performance metrics (e.g., accuracy, precision, recall, RMSE).
+● Compare model results and discuss findings.
+● Reflect on limitations and potential improvements.
+2
+
+--- PAGE 4 ---
+8. Conclusion
+● Summarise the key findings of the project, emphasising the advantages and limitations of the
+models used.
+● Highlight the overall contribution of the project to business decision-making.
+● Reflect on the lessons learned and potential improvements for future projects.
+9. References
+● Include proper in-text citations.
+● Use APA 7th edition format.
+● Minimum FIVE (5) credible references.
+● Two academic papers (journal/conference).
+Section B. Python Implementation Files
+This assignment requires TWO (2) separate submissions:
+1. Report Submission (Google Docs)
+● Submit the written report only through Google Classroom, together with a plagiarism
+detection report.
+● The report must be prepared in Google Docs format, using the template provided by the
+tutor-in-charge.
+● The report must follow the required format (refer to Section A) and include all visuals, tables,
+and model outputs to ensure it is self-contained.
+● Code snippets are not required; however, all relevant visuals generated using Python must be
+included in the report.
+● There is no prescribed file naming convention for the report submission.
+● No page limit is imposed on the report; however, students are expected to include all required
+content concisely.
+2. Code Submission (ZIP File)
+● Submit a compressed ZIP folder containing all technical files.
+● Naming format: GroupX_RSWY1S2_DataScienceProject.zip
+● The ZIP file must include:
+○ All Python files or Jupyter Notebooks (.py / .ipynb)
+○ Any prototype files (e.g., Streamlit scripts)
+Compulsory: Include a simple deployment prototype (e.g., Streamlit app, command-line demo, or
+notebook-based simulation).
+3. All visualisations, tables, and model outputs must be included in the report so that it is
+self-contained.
+3
+
+--- PAGE 5 ---
+Section C. Presentation
+Duration: 30 minutes including Q&A.
+Format: Group presentation (all members must participate).
+Late Submission:
+No late assignments will be accepted (get zero). Please DO NOT argue with your tutor if you really
+failed to submit your assignment on time, as the consequences of late submission have been given in
+advance. However, in certain circumstances, the students may be allowed to turn in the assignment
+late. With the exception of Extenuating Mitigation Circumstance (EMC) reasons, a penalty for the late
+submission shall be imposed after the submission deadline/extended submission deadline.
+The penalty is as follows:
+Late submission within 1 - 3 days: Total marks to be deducted are 10 marks.
+Late submission within 4 - 7 days: Total marks to be deducted are 20 marks.
+Late submission after 7 days: Reject coursework, and zero marks shall be awarded.
+Note: For EMC cases, students need to apply for the Leave of Application from the FOCS office as a
+record of proof of MCs, a Death Certificate. SPM Examination, MUET Examination, etc., are given.
+No-Cheating Policy:
+A reminder about the no-cheating policy: You are NOT ALLOWED to share your work with your
+peers, but please feel free to discuss with your peers. If cheating is discovered, both parties will take
+equal blame (get zero). Please note that the assignment should be your own work, although you may
+incorporate ideas or techniques from books, online resources, etc. Copying materials directly from
+any source will lead to zero. You have been warned. Whenever you face any problems, please seek
+advice from your tutor.
+4
