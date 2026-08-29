@@ -59,6 +59,8 @@ _CSS = """
 .profile-group { opacity:.96; transition:opacity .22s,filter .22s; animation:group-in .32s cubic-bezier(.2,.8,.2,1) both; }
 .profile-group.is-muted { opacity:.52; filter:saturate(.55); }
 .profile-group.is-editing { opacity:1; filter:none; }
+.telco3d.has-active[data-active-side="left"] .zone-left .profile-group.is-muted,
+.telco3d.has-active[data-active-side="right"] .zone-right .profile-group.is-muted { display:none; }
 .group-title { display:flex; align-items:center; gap:8px; margin:0 2px 9px; color:color-mix(in srgb,var(--st-text-color) 68%,transparent);
   font-size:12px; font-weight:800; letter-spacing:.85px; text-transform:uppercase; }
 .group-title::before { content:""; width:5px; height:5px; border:1px solid color-mix(in srgb,var(--telco-silver) 82%,transparent);
@@ -67,6 +69,7 @@ _CSS = """
 .profile-group.is-editing .group-title::before { border-color:var(--telco-amber-hot); background:var(--telco-amber);
   box-shadow:0 0 4px var(--telco-amber-hot),0 0 11px var(--telco-amber); }
 .profile-chips,.edit-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+.profile-group[data-section="Charges"] .profile-chips .summary-chip:first-child { grid-column:1/-1; }
 .summary-chip { position:relative; min-height:49px; padding:8px 12px 8px 18px; display:flex; flex-direction:column;
   justify-content:center; border:1px solid color-mix(in srgb,var(--st-text-color) 13%,transparent); border-radius:13px;
   background:color-mix(in srgb,var(--st-background-color) 77%,transparent);
@@ -79,6 +82,11 @@ _CSS = """
   border-radius:13px; background:color-mix(in srgb,var(--st-background-color) 72%,transparent); pointer-events:auto;
   box-shadow:0 0 16px rgba(242,184,75,.06); animation:field-in .3s cubic-bezier(.2,.8,.2,1) both; }
 .edit-field.is-wide { grid-column:1/-1; }
+.edit-field.total-charge-card { transition:border-color .2s,background .2s,box-shadow .2s; }
+.edit-field.total-charge-card.is-manual-active { border-color:var(--telco-amber);
+  background:color-mix(in srgb,var(--telco-amber-hot) 18%,var(--st-background-color));
+  box-shadow:0 0 6px rgba(255,227,154,.32),0 0 20px rgba(242,184,75,.22); }
+.edit-field.total-charge-card.is-derived { border-color:color-mix(in srgb,var(--telco-silver) 54%,transparent); }
 .field-head { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; }
 .field-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12.5px; font-weight:700; }
 .field-value { font-size:11.5px; font-weight:760; color:color-mix(in srgb,var(--st-text-color) 68%,var(--telco-amber) 32%); white-space:nowrap; }
@@ -99,6 +107,11 @@ _CSS = """
   box-shadow:0 0 4px var(--telco-amber-hot),0 0 10px var(--telco-amber); }
 .field-select { width:100%; min-height:38px; border:1px solid color-mix(in srgb,var(--st-text-color) 16%,transparent);
   border-radius:11px; padding:7px 9px; color:var(--st-text-color); background:var(--st-background-color); font-size:12.5px; }
+.field-number { width:100%; min-height:38px; box-sizing:border-box; border:1px solid color-mix(in srgb,var(--st-text-color) 16%,transparent);
+  border-radius:11px; padding:7px 9px; color:var(--st-text-color); background:var(--st-background-color);
+  font:inherit; font-size:13px; font-weight:720; }
+.total-charge-card.is-manual-active .field-number { border-color:var(--telco-amber); outline:none; }
+.total-charge-card.is-derived .field-number { opacity:.62; cursor:not-allowed; }
 .field-range { width:100%; min-height:22px; accent-color:var(--telco-amber); cursor:pointer; }
 @keyframes group-in { from { opacity:0; transform:translateY(8px); } to { transform:translateY(0); } }
 @keyframes field-in { from { opacity:0; transform:translateY(7px) scale(.98); } to { opacity:1; transform:translateY(0) scale(1); } }
@@ -158,7 +171,7 @@ export default async function(component) {
     ? {source:'server',priority:1,state:{...serverState,revision:Math.max(serverState.revision,Number(cachedState?.revision||0),Number(memoryState?.revision||0))+1}}
     : candidates.sort((a,b)=>(Number(b.state.revision||0)-Number(a.state.revision||0)) || (b.priority-a.priority))[0];
   if (!chosen) chosen={source:'server',state:serverState};
-  let profile=structuredClone(chosen.state.profile || {});
+  let profile={...structuredClone(serverState.profile || {}),...structuredClone(chosen.state.profile || {})};
   let changed=new Set(Array.isArray(chosen.state.changed) ? chosen.state.changed : []);
   let revision=Number(chosen.state.revision || 0);
   let overrideNonce=Math.max(serverState.overrideNonce,Number(chosen.state.overrideNonce || 0));
@@ -174,9 +187,10 @@ export default async function(component) {
       {key:'in_senior',label:'Senior citizen',options:['No','Yes']},
       {key:'in_partner',label:'Partner',options:['No','Yes']},
       {key:'in_dependents',label:'Dependents',options:['No','Yes']}]},
-    Charges: {label:'Charges',icon:'▣',count:2,angle:-1.35,y:1.05,side:'left',fields:[
+    Charges: {label:'Charges',icon:'▣',count:3,angle:-1.35,y:1.05,side:'left',fields:[
       {key:'in_monthly',label:'Monthly charges',type:'range',min:18,max:120,step:.5,suffix:'/mo'},
-      {key:'in_auto_total_mode',label:'Total charges',options:['Auto','Manual']}]},
+      {key:'in_auto_total_mode',label:'Calculation mode',options:['Auto','Manual']},
+      {key:'in_total_manual',label:'Total Charges (USD)',type:'number',min:0,step:10}]},
     Contract: {label:'Contract',icon:'▤',count:2,angle:1.25,y:1.38,side:'right',fields:[
       {key:'in_tenure',label:'Tenure',type:'range',min:0,max:72,step:1,suffix:' months'},
       {key:'in_contract',label:'Contract type',options:['Month-to-month','One year','Two year']}]},
@@ -301,6 +315,12 @@ export default async function(component) {
 
   function displayValue(field,value) {
     if (field.key==='in_monthly') return `$${Number(value).toFixed(1)}${field.suffix}`;
+    if (field.key==='in_total_manual') {
+      const amount=profile.in_auto_total_mode==='Auto'
+        ? Number(profile.in_tenure||0)*Number(profile.in_monthly||0)
+        : Number(value||0);
+      return `$${amount.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+    }
     if (field.type==='range') return `${value}${field.suffix||''}`;
     const short={'Bank transfer (automatic)':'Bank transfer','Credit card (automatic)':'Credit card'};
     return short[value] || value;
@@ -313,6 +333,7 @@ export default async function(component) {
   function commit(key,value) {
     profile[key]=value;
     changed.add(key); revision+=1; saveLocalState();
+    if (key==='in_auto_total_mode' || (profile.in_auto_total_mode==='Auto' && (key==='in_monthly' || key==='in_tenure'))) renderOverview();
     publishState();
   }
   function publishState() {
@@ -322,9 +343,15 @@ export default async function(component) {
       const chip=document.createElement('div'); chip.className='edit-field'; chip.style.animationDelay=`${index*35}ms`;
       if (!animateFields) chip.style.animation='none';
       if (field.type==='range' || field.type==='select' || field.options?.length>2) chip.classList.add('is-wide');
+      if (field.key==='in_total_manual') {
+        chip.classList.add('total-charge-card');
+        chip.classList.add(profile.in_auto_total_mode==='Manual' ? 'is-manual-active' : 'is-derived');
+      }
       const head=document.createElement('div'); head.className='field-head';
       const label=document.createElement('span'); label.className='field-label'; label.textContent=field.label;
-      const value=document.createElement('span'); value.className='field-value'; value.textContent=`${displayValue(field,profile[field.key])} ✓`;
+      const value=document.createElement('span'); value.className='field-value';
+      value.textContent=field.key==='in_total_manual' && profile.in_auto_total_mode==='Auto'
+        ? `⚡ ${displayValue(field,profile[field.key])}` : `${displayValue(field,profile[field.key])} ✓`;
       head.append(label,value); chip.append(head);
       if (field.type==='range') {
         const input=document.createElement('input'); input.type='range'; input.className='field-range';
@@ -336,6 +363,24 @@ export default async function(component) {
         const select=document.createElement('select'); select.className='field-select'; select.setAttribute('aria-label',field.label);
         field.options.forEach(option=>{ const el=document.createElement('option'); el.value=option; el.textContent=option; el.selected=option===profile[field.key]; select.append(el); });
         select.addEventListener('change',()=>{ value.textContent=`${displayValue(field,select.value)} ✓`; commit(field.key,select.value); }); chip.append(select);
+      } else if (field.type==='number') {
+        const input=document.createElement('input'); input.type='number'; input.className='field-number';
+        input.min=field.min; input.step=field.step;
+        input.value=profile.in_auto_total_mode==='Auto'
+          ? Number(profile.in_tenure||0)*Number(profile.in_monthly||0)
+          : Number(profile[field.key]||0);
+        input.disabled=profile.in_auto_total_mode!=='Manual'; input.setAttribute('aria-label',field.label);
+        let numberTimer; let lastCommitted=Number(profile[field.key]||0);
+        const numberValue=()=>Math.max(0,Number(input.value)||0);
+        const showNumber=()=>{ const next=numberValue();
+          value.textContent=`$${next.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} ✓`;
+          return next; };
+        const commitNumber=()=>{ const next=showNumber();
+          if (next===lastCommitted) return;
+          lastCommitted=next; commit(field.key,next); };
+        input.addEventListener('input',()=>{ showNumber(); clearTimeout(numberTimer);
+          numberTimer=setTimeout(commitNumber,400); });
+        input.addEventListener('blur',()=>{ clearTimeout(numberTimer); commitNumber(); }); chip.append(input);
       } else {
         const row=document.createElement('div'); row.className='option-row';
         field.options.forEach(option=>{ const button=document.createElement('button'); button.type='button'; button.className='option-button';
@@ -381,6 +426,7 @@ export default async function(component) {
     if (publish && active===name) { closeActive(); return; }
     active=name; root.dataset.activeSection=name;
     const cfg=sections[name]; targetRotation=-cfg.angle;
+    root.dataset.activeSide=cfg.side;
     root.classList.add('has-active');
     Object.entries(sections).forEach(([key,item])=>item.button.classList.toggle('is-active',key===name));
     Object.entries(podObjects).forEach(([key,pod])=>{pod.userData.box.material=key===name?podActiveMat:podMat;});
@@ -389,7 +435,7 @@ export default async function(component) {
   }
   function closeActive() {
     active=null; root.dataset.activeSection='__none__';
-    targetRotation=null; root.classList.remove('has-active');
+    targetRotation=null; root.classList.remove('has-active'); delete root.dataset.activeSide;
     Object.values(sections).forEach(item=>item.button.classList.remove('is-active'));
     Object.values(podObjects).forEach(pod=>pod.userData.box.material=podMat);
     renderOverview();
@@ -451,7 +497,7 @@ _tower_component = st.components.v2.component(
 
 _PROFILE_KEYS = {
     "in_gender", "in_senior", "in_partner", "in_dependents",
-    "in_monthly", "in_auto_total_mode", "in_tenure", "in_contract",
+    "in_monthly", "in_auto_total_mode", "in_total_manual", "in_tenure", "in_contract",
     "in_payment", "in_paperless", "in_phone", "in_internet", "in_lines",
     "in_OnlineSecurity", "in_OnlineBackup", "in_DeviceProtection",
     "in_TechSupport", "in_StreamingTV", "in_StreamingMovies",

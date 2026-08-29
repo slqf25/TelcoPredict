@@ -45,6 +45,8 @@ import eda_plots as epl  # noqa: E402
 import modelling as md  # noqa: E402
 import evaluation as ev  # noqa: E402
 import plotly_charts as pc  # Plotly (interactive) chart layer — app-only, see file docstring
+import model_interactions as miv  # Complex threshold/Sankey/3D visuals — display only
+import prediction_visuals as pv  # Single-customer Predict result visuals
 from sklearn.linear_model import LogisticRegression  # noqa: E402
 from sklearn.tree import DecisionTreeClassifier  # noqa: E402
 from sklearn.ensemble import RandomForestClassifier  # noqa: E402
@@ -55,10 +57,34 @@ from xgboost import XGBClassifier  # noqa: E402
 from ui_style import (  # noqa: E402
     NAVY, BLUE, LIGHT, RED, GREEN, AMBER,
     MODEL_ICON, TIER_INFO,
-    inject_css, sec, show_fig, signal_bars_html, mi,
-    lerp_color,
+    inject_css, sec, show_fig, mi, attach_predict_button_loader,
 )
 from tower_3d import render_tower_3d  # noqa: E402
+
+_predict_loader_reset = st.components.v2.component(
+    "predict_loader_reset_app_v1",
+    html='<span aria-hidden="true"></span>',
+    js=r"""
+export default function(component) {
+  component.parentElement.style.display='none';
+  const button=component.parentElement.ownerDocument.querySelector(
+    'div.st-key-predict_button button'
+  );
+  button?.classList.remove('predict-is-loading');
+  button?.removeAttribute('aria-busy');
+}
+""",
+    isolate_styles=False,
+)
+
+
+def finish_predict_button_loader():
+    """Restore Predict after the fragment has finished rendering its result."""
+    completion_token = time.time_ns()
+    _predict_loader_reset(
+        key=f"predict_loader_reset_{completion_token}",
+        height=1,
+    )
 
 DEFAULT_MODEL = "Random Forest"  # recommended model, report Section 5.9
 
@@ -189,26 +215,6 @@ def contract_tenure_reference():
     return share.round(1), churn.round(1), counts
 
 
-@st.cache_data
-def charges_consistency_reference():
-    """
-    How closely TotalCharges tracks tenure x MonthlyCharges in the real data.
-    Deviations are genuine (prices change over a customer's life), so the app uses
-    this to tell the user whether a manually-entered TotalCharges is realistic.
-    """
-    df, _, _ = load_eda_data()
-    d = df[df["tenure"] > 0].copy()
-    expected = d["tenure"] * d["MonthlyCharges"]
-    dev = (d["TotalCharges"] - expected) / expected * 100
-    return {
-        "median_dev": float(dev.median()),
-        "p05": float(dev.quantile(0.05)),
-        "p95": float(dev.quantile(0.95)),
-        "within_10pct": float((dev.abs() <= 10).mean() * 100),
-        "mean_abs_dev": float(dev.abs().mean()),
-    }
-
-
 @st.cache_resource(show_spinner="Reconstructing the train/test split and SMOTE resample...")
 def build_eval_bundle(feature_columns):
     """
@@ -254,12 +260,9 @@ def compute_vif_table(feature_columns):
 models, scaler, feature_columns = load_artifacts()
 
 # ----------------------------------------------------------------------
-# Top control strip — model selector + demo presets, above all 3 tabs (was a
-# sidebar). Only the Predict tab actually consumes model_name for its
-# prediction/importance display; Data Analysis is model-agnostic and the
-# Models tab's sub-tabs each pick their own model (or show all 4 at once), so
-# there's nothing here that truly needs a permanent side column — putting it
-# in the normal page flow gives the 3-tab layout its width back.
+# Top control strip — one model selector shared by Predict and every
+# model-specific interactive view. Comparison views may still show all four
+# models, but the selected model remains the application-wide focus.
 # ----------------------------------------------------------------------
 top1, top2, top3 = st.columns([1.1, 1.6, 1.1])
 with top1:
@@ -347,29 +350,15 @@ features: `ContractRiskScore` (Month-to-month = 2, One year = 1, Two year = 0) a
 
     st.markdown('<div class="grp">Customer profile</div>', unsafe_allow_html=True)
 
-    # The tower is a two-level navigation map. Six category modules stay visible;
-    # only the selected module's real controls are expanded. This keeps unrelated
-    # demographic, billing, connectivity, and add-on fields from competing in
-    # one undifferentiated cloud.
-    # One full-width canvas: do not wrap the tower and inspector in
-    # st.columns(), which creates the left/right stHorizontalBlock seen in the
-    # rendered DOM. Both phases append to the same vertical panel instead.
+    # The 3D tower and both profile zones share one full-width component.
     network_panel = st.container(key="customer_network")
-    col2 = network_panel
-    col3 = network_panel
 
-    with col2:
+    with network_panel:
         st.markdown(
             '<div class="tower-title">Interactive customer network</div>',
             unsafe_allow_html=True,
         )
-        # Tenure is now a light point too — its slider only appears once you
-        # click it (same click-to-reveal idea as Auto/Manual's number_input),
-        # instead of always taking up a row above the tower.
         tenure = st.session_state.setdefault("in_tenure", 12)
-        # Read here (not just in col3) so the Monthly Charges light point below
-        # can show the current value — col3 (which owns the authoritative
-        # slider) hasn't run yet at this point in the script.
         monthly_charges = st.session_state.get("in_monthly", 70.0)
         _tenure_level = int(pd.cut([tenure], [-1, 12, 24, 48, 60, 200], labels=[1, 2, 3, 4, 5])[0])
         _tier_label, _gradient = TIER_INFO[_tenure_level]
@@ -390,6 +379,9 @@ features: `ContractRiskScore` (Month-to-month = 2, One year = 1, Two year = 0) a
         partner = st.session_state.setdefault("in_partner", "No")
         dependents = st.session_state.setdefault("in_dependents", "No")
         auto_mode = st.session_state.setdefault("in_auto_total_mode", "Auto")
+        manual_total = st.session_state.setdefault(
+            "in_total_manual", float(round(tenure * monthly_charges, 2))
+        )
         addon_vals = {
             svc: st.session_state.setdefault(f"in_{svc}", "No")
             for svc in ADDON_SERVICES
@@ -401,6 +393,7 @@ features: `ContractRiskScore` (Month-to-month = 2, One year = 1, Two year = 0) a
             "in_dependents": dependents,
             "in_monthly": monthly_charges,
             "in_auto_total_mode": auto_mode,
+            "in_total_manual": manual_total,
             "in_tenure": tenure,
             "in_contract": contract,
             "in_payment": payment_method,
@@ -416,6 +409,7 @@ features: `ContractRiskScore` (Month-to-month = 2, One year = 1, Two year = 0) a
         dependents = tower_values["in_dependents"]
         monthly_charges = tower_values["in_monthly"]
         auto_mode = tower_values["in_auto_total_mode"]
+        manual_total = tower_values["in_total_manual"]
         tenure = tower_values["in_tenure"]
         contract = tower_values["in_contract"]
         payment_method = tower_values["in_payment"]
@@ -425,41 +419,10 @@ features: `ContractRiskScore` (Month-to-month = 2, One year = 1, Two year = 0) a
         multiple_lines = tower_values["in_lines"]
         addon_vals = {service: tower_values[f"in_{service}"] for service in ADDON_SERVICES}
 
-    with col3:
-        st.markdown("**Customer inputs & billing**")
-        st.caption("Billing summary updates immediately from the 3D tower controls.")
-        monthly_charges = st.session_state.setdefault("in_monthly", 70.0)
-        auto_mode = st.session_state.get("in_auto_total_mode", "Auto")
-        auto_total = auto_mode == "Auto"
-        expected_total = round(tenure * monthly_charges, 2)
-        total_charges = (float(expected_total) if auto_total
-                         else st.session_state.get("in_total_manual", expected_total))
-        if auto_total:
-            st.metric("Total Charges (USD)", f"${total_charges:,.2f}", help="tenure x Monthly Charges")
-        st.caption(f":material/{'bolt' if auto_mode == 'Auto' else 'edit'}: **{auto_mode}** mode "
-                   "— change this in the Charges module.")
-
-        if not auto_total:
-            total_charges = st.number_input(
-                "Total Charges (USD)", min_value=0.0, value=float(expected_total),
-                step=10.0, key="in_total_manual")
-
-        # Plausibility feedback vs the real data
-        ref = charges_consistency_reference()
-        if expected_total > 0:
-            dev_pct = (total_charges - expected_total) / expected_total * 100
-            if abs(dev_pct) <= 10:
-                st.caption(f"✅ {dev_pct:+.1f}% vs tenure x monthly — typical "
-                           f"({ref['within_10pct']:.0f}% of real customers are within ±10%).")
-            elif abs(dev_pct) <= 25:
-                st.caption(f"⚠️ {dev_pct:+.1f}% vs tenure x monthly — possible but uncommon "
-                           f"(implies the monthly price changed a lot over time).")
-            else:
-                st.caption(f"🚩 {dev_pct:+.1f}% vs tenure x monthly — outside anything in the "
-                           f"training data; the prediction will be an extrapolation.")
-        elif total_charges > 0:
-            st.caption("🚩 Tenure is 0 but Total Charges is not — the 11 real zero-tenure "
-                       "customers all have Total Charges = 0 (Section 3.1).")
+    # Total Charges is edited and explained inside the Charges tower section.
+    # Auto mode remains a derived model input; Manual mode uses the cached value.
+    expected_total = round(tenure * monthly_charges, 2)
+    total_charges = float(expected_total if auto_mode == "Auto" else manual_total)
 
     # --- Services -------------------------------------------------------------
     # Connection and add-on values are edited in the selected tower control dock;
@@ -482,6 +445,16 @@ features: `ContractRiskScore` (Month-to-month = 2, One year = 1, Two year = 0) a
         st.markdown('<div class="finding amber">⚠️ ' + "<br>".join(coerced) + "</div>",
                     unsafe_allow_html=True)
 
+    profile_snapshot = {
+        "gender": gender, "senior_citizen": senior_citizen,
+        "partner": partner, "dependents": dependents, "tenure": tenure,
+        "contract": contract, "paperless_billing": paperless_billing,
+        "payment_method": payment_method, "monthly_charges": float(monthly_charges),
+        "total_charges": float(total_charges), "phone_service": phone_service,
+        "multiple_lines": multiple_lines, "internet_service": internet_service,
+        "addons": dict(addon_vals), "model_name": model_name,
+    }
+
     # The button + result block runs as a fragment: clicking Predict only reruns this
     # function, not the whole script (Data Analysis / Models tab computations are
     # skipped), so the result appears snappily with no full-page flash — and the
@@ -490,9 +463,15 @@ features: `ContractRiskScore` (Month-to-month = 2, One year = 1, Two year = 0) a
     def render_prediction(gender, senior_citizen, partner, dependents, tenure, contract,
                           paperless_billing, payment_method, monthly_charges, total_charges,
                           phone_service, multiple_lines, internet_service, addon_vals,
-                          model_name, model, models, feature_columns, scaler):
-        predict_clicked = st.button(f"Predict Churn Risk  ·  {model_name}",
-                                    width="stretch", type="primary")
+                          model_name, model, models, feature_columns, scaler,
+                          profile_snapshot):
+        predict_clicked = st.button(
+            f"Predict Churn Risk  ·  {model_name}",
+            width="stretch",
+            type="primary",
+            key="predict_button",
+        )
+        attach_predict_button_loader()
 
         if predict_clicked:
             eff_addons = dict(addon_vals)
@@ -526,33 +505,36 @@ features: `ContractRiskScore` (Month-to-month = 2, One year = 1, Two year = 0) a
 
             proba = float(model.predict_proba(X_input_scaled)[0, 1])
             if proba < 0.40:
-                risk_label, risk_color, badge_class = "LOW RISK", GREEN, "risk-badge"
+                risk_label, risk_color = "LOW RISK", GREEN
             elif proba < 0.70:
-                risk_label, risk_color, badge_class = "MEDIUM RISK", AMBER, "risk-badge"
+                risk_label, risk_color = "MEDIUM RISK", AMBER
             else:
-                risk_label, risk_color, badge_class = "HIGH RISK", RED, "risk-badge pulse"
+                risk_label, risk_color = "HIGH RISK", RED
+
+            all_probs = {
+                name: float(candidate.predict_proba(X_input_scaled)[0, 1]) * 100
+                for name, candidate in models.items()
+            }
+            st.session_state["last_prediction_summary"] = {
+                "profile": profile_snapshot,
+                "probability": proba * 100,
+                "risk_label": risk_label,
+                "risk_color": risk_color,
+                "model_name": model_name,
+                "all_probs": all_probs,
+            }
 
             st.divider()
             st.subheader("Prediction Result")
-            r1, r2 = st.columns([1, 2])
-            with r1:
-                st.metric(f"Churn Probability · {model_name}", f"{proba*100:.1f}%",
-                          delta=f"{(proba - 0.2654)*100:+.1f} pp vs base rate")
-            with r2:
-                st.markdown(f'<div class="{badge_class}" style="background:{risk_color}">{risk_label}</div>',
-                            unsafe_allow_html=True)
-                signal_remaining = (1 - proba) * 5
-                st.markdown(signal_bars_html(signal_remaining, risk_color,
-                                             flicker_last=(risk_label == "HIGH RISK")),
-                            unsafe_allow_html=True)
-                if round(signal_remaining) == 0:
-                    st.caption("📵 No signal — this customer reads as effectively gone. "
-                               "Low < 40%  ·  Medium 40–70%  ·  High > 70%   "
-                               "(dataset base churn rate: 26.5%)")
-                else:
-                    st.caption(f"📶 {round(signal_remaining)}/5 bars remaining · "
-                               "Low < 40%  ·  Medium 40–70%  ·  High > 70%   "
-                               "(dataset base churn rate: 26.5%)")
+            st.markdown(
+                pv.hero_html(proba * 100, risk_label, risk_color, model_name),
+                unsafe_allow_html=True,
+            )
+            st.plotly_chart(
+                pv.signal_spectrum(proba * 100),
+                width="stretch", config={"displayModeBar": False},
+                key="prediction_signal_spectrum",
+            )
             if risk_label == "LOW RISK":
                 st.balloons()
 
@@ -595,23 +577,44 @@ features: `ContractRiskScore` (Month-to-month = 2, One year = 1, Two year = 0) a
             st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
             st.caption(imp_note + " Global ranking, not a per-prediction SHAP explanation (future work).")
 
-            # all four models on this customer
-            st.markdown("##### All four models — churn probability for this customer")
-            all_probs = {n: float(mm.predict_proba(X_input_scaled)[0, 1]) * 100 for n, mm in models.items()}
-            pdf = pd.DataFrame({"Model": list(all_probs), "Churn probability (%)": list(all_probs.values())})
-            mc1, mc2 = st.columns([2, 1])
-            with mc1:
-                st.dataframe(
-                    pdf.style.format({"Churn probability (%)": "{:.1f}"})
-                       .background_gradient(cmap="Reds", subset=["Churn probability (%)"]),
-                    hide_index=True, width="stretch")
-            with mc2:
-                spread = max(all_probs.values()) - min(all_probs.values())
-                st.metric("Model agreement spread", f"{spread:.1f} pp",
-                          help="Range between the most and least alarmed model. A wide spread means "
-                               "the models disagree about this customer.")
+            st.markdown("##### Model consensus")
+            st.caption("The star marks the selected model; hover each signal for test-set context.")
+            st.plotly_chart(
+                pv.model_consensus(all_probs, model_name, TEST_METRICS),
+                width="stretch", config={"displayModeBar": False},
+                key="prediction_model_consensus",
+            )
             with st.expander("Show raw model input (debug)"):
                 st.dataframe(X_input.T, width="stretch")
+            # This delta reaches the browser after the result UI above, providing a
+            # deterministic completion signal without relying on Streamlit's global
+            # Running indicator (which fragments do not consistently render).
+            finish_predict_button_loader()
+        elif "last_prediction_summary" in st.session_state:
+            cached = st.session_state["last_prediction_summary"]
+            outdated = cached["profile"] != profile_snapshot
+            if outdated:
+                st.warning("Profile changed — click **Predict Churn Risk** to refresh this result.")
+            else:
+                st.caption("Showing the most recent prediction for the current profile.")
+            st.divider()
+            st.subheader("Prediction Result")
+            st.markdown(
+                pv.hero_html(cached["probability"], cached["risk_label"],
+                             cached["risk_color"], cached["model_name"]),
+                unsafe_allow_html=True,
+            )
+            st.plotly_chart(
+                pv.signal_spectrum(cached["probability"]),
+                width="stretch", config={"displayModeBar": False},
+                key="cached_prediction_signal_spectrum",
+            )
+            st.markdown("##### Model consensus")
+            st.plotly_chart(
+                pv.model_consensus(cached["all_probs"], cached["model_name"], TEST_METRICS),
+                width="stretch", config={"displayModeBar": False},
+                key="cached_prediction_model_consensus",
+            )
         else:
             st.info("Adjust the profile above, then click **Predict Churn Risk**. "
                     "Use the sidebar presets to jump to the highest- or lowest-risk segment "
@@ -620,7 +623,8 @@ features: `ContractRiskScore` (Month-to-month = 2, One year = 1, Two year = 0) a
     render_prediction(gender, senior_citizen, partner, dependents, tenure, contract,
                       paperless_billing, payment_method, monthly_charges, total_charges,
                       phone_service, multiple_lines, internet_service, addon_vals,
-                      model_name, model, models, feature_columns, scaler)
+                      model_name, model, models, feature_columns, scaler,
+                      profile_snapshot)
 
 # ======================================================================
 # TAB 2 — DATA ANALYSIS  (report Sections 2-3, every analysis, computed live)
@@ -630,8 +634,8 @@ with tab_analysis:
 
     (da_overview, da_univariate, da_engineered, da_interact,
      da_stats, da_quality, da_vif) = st.tabs([
-        "2.1-2.3 Overview", "2.5 Univariate", "2.6 Engineered Features",
-        "2.7 Interactions", "2.8 Statistical Tests", "3.1-3.2 Data Quality", "3.3 VIF",
+        "Overview", "Churn Patterns", "Feature Engineering",
+        "Customer Interactions", "Statistical Evidence", "Data Quality", "Multicollinearity",
     ])
 
     # -- 2.1-2.3 Overview & summary statistics -------------------------
@@ -860,160 +864,597 @@ with tab_analysis:
 with tab_models:
     X_train_sm, y_train_sm, X_test_scaled, y_test = build_eval_bundle(tuple(feature_columns))
 
-    (mo_perf, mo_curves, mo_confuse, mo_importance,
-     mo_tree, mo_overfit, mo_threshold, mo_cv) = st.tabs([
-        "5.2 Performance", "5.6 ROC / PR", "5.2 Confusion", "5.3-5.4 Importance",
-        "5.5 Decision Tree", "5.8 Overfitting", "5.7 Threshold", "4.3 Cross-Validation",
+    (mo_perf, mo_importance,
+     mo_reliability, mo_threshold) = st.tabs([
+        "Performance", "Explainability", "Reliability", "Decision Threshold",
     ])
 
-    # -- 5.1-5.2 Performance overview -------------------------------------
+    # -- 5.1/5.2/5.6 Integrated performance workspace ----------------------
     with mo_perf:
-        sec("5.1-5.2", "Evaluation Metrics & Model Performance Comparison")
+        sec(
+            "5.1, 5.2 & 5.6",
+            "Interactive Model Performance Lab",
+            "Rank models by the metric that matters, then inspect ROC and Precision-Recall "
+            "behaviour. All values come from the existing held-out test predictions.",
+        )
+        performance_view = st.segmented_control(
+            "Analysis view",
+            ["Metric Scorecard", "ROC / PR Curves"],
+            default="Metric Scorecard",
+            key="performance_analysis_view",
+        ) or "Metric Scorecard"
+
         dummy = ev.dummy_baseline(X_train_sm, y_train_sm, X_test_scaled, y_test)
-        d1, d2, d3, d4 = st.columns(4)
-        d1.metric("Dummy Accuracy", f"{dummy['Accuracy']*100:.1f}%")
-        d2.metric("Dummy Precision", f"{dummy['Precision']*100:.1f}%")
-        d3.metric("Dummy Recall", f"{dummy['Recall']*100:.1f}%")
-        d4.metric("Dummy F1", f"{dummy['F1']*100:.1f}%")
-        st.caption("5.1 — A majority-class dummy classifier reaches competitive Accuracy but scores "
-                   "0.0 on Precision/Recall/F1 — empirical proof Accuracy alone would mislead here.")
-
         results_df = ev.evaluate_all_models(models, X_test_scaled, y_test)
-        st.markdown("**Table 7 — Accuracy / Precision / Recall / F1 / AUC (test set, n=1,409)**")
-        st.dataframe(
-            (results_df * 100).assign(AUC=results_df["AUC"]).style
-                .format({"Accuracy": "{:.2f}", "Precision": "{:.2f}", "Recall": "{:.2f}",
-                        "F1": "{:.2f}", "AUC": "{:.3f}"})
-                .highlight_max(axis=0, props=f"background-color:{LIGHT};font-weight:700;"),
-            width="stretch")
-        st.markdown("**Figure 8 — Model Performance Comparison**")
-        st.plotly_chart(pc.plot_model_comparison_plotly(results_df), width="stretch",
-                        key="model_comparison_chart")
 
-    # -- 5.6 ROC / PR curves -----------------------------------------------
-    with mo_curves:
-        sec("5.2 / 5.6", "ROC Curves & Precision-Recall Curves")
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("**Figure 6 — ROC curves** (interactive — hover for exact threshold)")
-            st.plotly_chart(pc.plot_roc_curves_plotly(models, X_test_scaled, y_test),
-                            width="stretch", key="roc_chart")
-        with c2:
-            st.markdown("**Figure 11 — Precision-Recall curves**")
-            st.plotly_chart(pc.plot_pr_curves_plotly(models, X_test_scaled, y_test),
-                            width="stretch", key="pr_chart")
-        st.markdown(
-            '<div class="finding blue">ROC-AUC ranks Random Forest first, but Average Precision '
-            '(more informative on an imbalanced target) ranks Logistic Regression marginally ahead '
-            '(0.650 vs 0.647) — reporting both avoids overselling either metric (Section 5.6).</div>',
-            unsafe_allow_html=True)
+        if performance_view == "Metric Scorecard":
+            metric = st.segmented_control(
+                "Metric focus",
+                ["Accuracy", "Precision", "Recall", "F1", "AUC"],
+                default="F1",
+                key="performance_metric_focus",
+                help="Changing the metric changes only the ranking view; model predictions stay fixed.",
+            ) or "F1"
+            ranking = miv.performance_ranking_frame(results_df, metric)
+            best_model = ranking.index[0]
+            selected_rank = int(ranking.index.get_loc(model_name) + 1)
+            best_value = float(ranking.iloc[0][metric])
+            selected_value = float(results_df.loc[model_name, metric])
+            metric_value = lambda value: f"{value:.3f}" if metric == "AUC" else f"{value * 100:.1f}%"
 
-    # -- 5.2 Confusion matrices ---------------------------------------------
-    with mo_confuse:
-        sec("5.2", "Confusion Matrices", "Test set, n = 1,409.")
-        st.markdown("**Figure 7 — Confusion Matrices (all four models)**")
-        st.plotly_chart(pc.plot_confusion_matrices_plotly(models, X_test_scaled, y_test),
-                        width="stretch", key="confusion_chart")
+            p1, p2, p3 = st.columns(3)
+            p1.metric(f"Best {metric}", best_model)
+            p1.caption(metric_value(best_value))
+            p2.metric("Selected model", model_name)
+            p2.caption(f"{metric_value(selected_value)} · rank {selected_rank} of {len(ranking)}")
+            p3.metric("Gap from leader", metric_value(best_value - selected_value))
+            p3.caption("0 means the selected model leads this metric")
 
-    # -- 5.3-5.4 Feature importance / LR coefficients ------------------------
+            st.markdown(f"**Interactive {metric} ranking**")
+            st.plotly_chart(
+                miv.plot_metric_ranking(results_df, metric, selected_model=model_name),
+                width="stretch",
+                key="performance_metric_ranking",
+            )
+            st.markdown(
+                f'<div class="finding blue"><b>Metric finding.</b> {best_model} leads {metric} at '
+                f'<b>{metric_value(best_value)}</b>. The globally selected {model_name} ranks '
+                f'<b>#{selected_rank}</b> at {metric_value(selected_value)}. Change the metric above '
+                'to show why “best model” depends on the decision objective.</div>',
+                unsafe_allow_html=True,
+            )
+
+            with st.expander("Accuracy trap — compare against the dummy baseline"):
+                d1, d2, d3, d4 = st.columns(4)
+                d1.metric("Dummy Accuracy", f"{dummy['Accuracy']*100:.1f}%")
+                d2.metric("Dummy Precision", f"{dummy['Precision']*100:.1f}%")
+                d3.metric("Dummy Recall", f"{dummy['Recall']*100:.1f}%")
+                d4.metric("Dummy F1", f"{dummy['F1']*100:.1f}%")
+                st.caption(
+                    "Section 5.1 — A majority-class dummy reaches competitive Accuracy but scores "
+                    "0.0 on Precision, Recall and F1. Accuracy alone would therefore mislead."
+                )
+
+            with st.expander("Table 7 and Figure 8 — full original performance comparison"):
+                st.markdown("**Table 7 — Accuracy / Precision / Recall / F1 / AUC (test set, n=1,409)**")
+                st.dataframe(
+                    (results_df * 100).assign(AUC=results_df["AUC"]).style
+                        .format({"Accuracy": "{:.2f}", "Precision": "{:.2f}", "Recall": "{:.2f}",
+                                "F1": "{:.2f}", "AUC": "{:.3f}"})
+                        .highlight_max(axis=0, props=f"background-color:{LIGHT};font-weight:700;"),
+                    width="stretch",
+                )
+                st.markdown("**Figure 8 — Model Performance Comparison**")
+                st.plotly_chart(
+                    pc.plot_model_comparison_plotly(results_df),
+                    width="stretch",
+                    key="model_comparison_chart",
+                )
+        else:
+            curve_summary = miv.curve_summary_frame(models, X_test_scaled, y_test)
+            selected_curve = curve_summary.loc[model_name]
+            auc_winner = curve_summary["ROC-AUC"].idxmax()
+            ap_winner = curve_summary["Average Precision"].idxmax()
+
+            st.markdown(
+                f'<div class="finding blue"><b>Selected-model emphasis:</b> {model_name} is shown '
+                'with a stronger line; the other models remain visible for a fair comparison.</div>',
+                unsafe_allow_html=True,
+            )
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Selected ROC-AUC", f'{selected_curve["ROC-AUC"]:.3f}')
+            c1.caption(f'Leader: {auc_winner} ({curve_summary.loc[auc_winner, "ROC-AUC"]:.3f})')
+            c2.metric("Selected Avg Precision", f'{selected_curve["Average Precision"]:.3f}')
+            c2.caption(f'Leader: {ap_winner} ({curve_summary.loc[ap_winner, "Average Precision"]:.3f})')
+            c3.metric("No-skill PR baseline", f"{float(np.mean(y_test)):.3f}")
+            c3.caption("Observed churn prevalence in the test set")
+
+            roc_col, pr_col = st.columns(2)
+            with roc_col:
+                st.markdown("**Figure 6 — ROC curves**")
+                st.plotly_chart(
+                    miv.plot_discrimination_curve(
+                        models, X_test_scaled, y_test, "ROC", selected_model=model_name
+                    ),
+                    width="stretch",
+                    key="roc_chart",
+                )
+            with pr_col:
+                st.markdown("**Figure 11 — Precision-Recall curves**")
+                st.plotly_chart(
+                    miv.plot_discrimination_curve(
+                        models, X_test_scaled, y_test, "PR", selected_model=model_name
+                    ),
+                    width="stretch",
+                    key="pr_chart",
+                )
+            st.markdown(
+                f'<div class="finding blue"><b>Curve finding.</b> ROC-AUC ranks {auc_winner} first, '
+                f'while Average Precision ranks {ap_winner} first. PR is especially useful here because '
+                'churn is the minority class; showing both prevents a one-metric claim from being '
+                'overstated (Section 5.6).</div>',
+                unsafe_allow_html=True,
+            )
+            with st.expander("View exact ROC-AUC and Average Precision values"):
+                st.dataframe(curve_summary.style.format("{:.3f}").highlight_max(
+                    axis=0, props=f"background-color:{LIGHT};font-weight:700;"
+                ), width="stretch")
+
+    # -- 5.3-5.5 Integrated model explainability workspace -------------------
     with mo_importance:
-        sec("5.3-5.4", "Feature Importance & Logistic Regression Coefficients")
-        i1, i2 = st.columns(2)
-        with i1:
-            st.markdown("**Figure 9 — Random Forest top-10 importance**")
-            rf_imp = ev.get_feature_importance(models["Random Forest"], feature_columns)
-            st.plotly_chart(pc.plot_feature_importance_plotly(rf_imp),
-                            width="stretch", key="rf_importance_chart")
-        with i2:
-            st.markdown("**XGBoost top-10 importance**")
-            xgb_imp = ev.get_feature_importance(models["XGBoost"], feature_columns)
-            st.plotly_chart(pc.plot_feature_importance_plotly(xgb_imp),
-                            width="stretch", key="xgb_importance_chart")
-        st.markdown(
-            f'<div class="finding green">ChargesToTenureRatio leads Random Forest '
-            f'(<b>{rf_imp.iloc[0]:.3f}</b>); ContractRiskScore dominates XGBoost '
-            f'(<b>{xgb_imp.iloc[0]:.3f}</b>). Both engineered features outrank every raw column '
-            'they were built from (Section 5.3).</div>', unsafe_allow_html=True)
+        sec(
+            "5.3-5.5",
+            "Interactive Model Explainability Lab",
+            "Compare ensemble drivers or inspect the explanation exposed by the model selected "
+            "above. Importance describes model reliance, not causal impact.",
+        )
+        explanation_view = st.segmented_control(
+            "Explanation view",
+            ["Cross-model Drivers", "Selected Model Detail"],
+            default="Cross-model Drivers",
+            key="explanation_analysis_view",
+        ) or "Cross-model Drivers"
 
-        st.markdown("**Table 8 — Logistic Regression coefficients & odds ratios**")
+        rf_imp = ev.get_feature_importance(models["Random Forest"], feature_columns)
+        xgb_imp = ev.get_feature_importance(models["XGBoost"], feature_columns)
         lr_coefs = ev.get_lr_coefficients(models["Logistic Regression"], feature_columns)
-        oc1, oc2 = st.columns(2)
-        oc1.markdown("Top positive (higher churn odds)")
-        oc1.dataframe(lr_coefs.head(8).style.format({"coefficient": "{:.3f}", "odds_ratio": "{:.3f}"}),
-                     width="stretch")
-        oc2.markdown("Top negative (lower churn odds)")
-        oc2.dataframe(lr_coefs.tail(8).sort_values("coefficient").style.format(
-            {"coefficient": "{:.3f}", "odds_ratio": "{:.3f}"}), width="stretch")
 
-    # -- 5.5 Decision tree structure ------------------------------------------
-    with mo_tree:
-        sec("5.5", "Decision Tree Structure", "Figure 12 — top 3 of 5 trained levels, for readability.")
-        show_fig(ev.plot_decision_tree_structure(models["Decision Tree"], feature_columns, max_depth_display=3))
-        st.caption("The root-node split is on a contract/charges-related feature before any demographic "
-                  "attribute — a rule-based echo of the Section 2.7 interaction finding.")
+        if explanation_view == "Cross-model Drivers":
+            overlap = miv.tree_importance_overlap(models, feature_columns, top_n=10)
+            aligned_importance = miv.tree_importance_comparison_frame(
+                models, feature_columns, top_n=12
+            )
+            e1, e2, e3 = st.columns(3)
+            e1.metric("Random Forest leader", overlap["rf_leader"])
+            e1.caption(f'{overlap["rf_value"]:.3f} importance')
+            e2.metric("XGBoost leader", overlap["xgb_leader"])
+            e2.caption(f'{overlap["xgb_value"]:.3f} importance')
+            e3.metric("Shared top-10 drivers", f'{overlap["shared_count"]} of 10')
+            e3.caption("Agreement is useful; disagreement reveals model-specific reasoning")
 
-    # -- 5.8 Overfitting check --------------------------------------------------
-    with mo_overfit:
-        sec("5.8", "Overfitting Check", "Train F1 (SMOTE-balanced) vs Test F1 (natural imbalance).")
+            st.markdown("**How the two ensemble models prioritise the strongest drivers**")
+            st.plotly_chart(
+                miv.plot_tree_importance_comparison(aligned_importance),
+                width="stretch",
+                key="tree_importance_comparison",
+            )
+            shared_text = ", ".join(overlap["shared_features"][:5])
+            if overlap["shared_count"] > 5:
+                shared_text += f' and {overlap["shared_count"] - 5} more'
+            st.markdown(
+                f'<div class="finding green"><b>Driver comparison.</b> Random Forest is led by '
+                f'<b>{overlap["rf_leader"]}</b>, while XGBoost is led by '
+                f'<b>{overlap["xgb_leader"]}</b>. Their top-10 lists share '
+                f'<b>{overlap["shared_count"]}</b> features: {shared_text}. This shows both '
+                'consensus and model-specific reliance without claiming causation.</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            explanation = miv.model_explanation_frame(
+                models[model_name], feature_columns, model_name
+            )
+            leader = explanation.iloc[0]
+            explanation_type = leader["Explanation type"]
+            s1, s2, s3 = st.columns(3)
+            s1.metric("Selected model", model_name)
+            s1.caption("Controlled by the model cards above")
+            s2.metric("Explanation type", explanation_type)
+            s2.caption("Coefficient" if explanation_type == "Coefficient" else "Global feature importance")
+            s3.metric("Strongest driver", leader["Feature"])
+            s3.caption(
+                f'{leader["Effect"]:+.3f} coefficient'
+                if explanation_type == "Coefficient"
+                else f'{leader["Magnitude"]:.3f} importance'
+            )
+
+            st.markdown(f"**Top drivers exposed by {model_name}**")
+            st.plotly_chart(
+                miv.plot_selected_model_explanation(explanation, model_name, top_n=12),
+                width="stretch",
+                key="selected_model_explanation",
+            )
+            if explanation_type == "Coefficient":
+                direction_text = "increases" if leader["Effect"] > 0 else "decreases"
+                detail = (
+                    f'{leader["Feature"]} has the largest absolute standardised coefficient '
+                    f'({leader["Effect"]:+.3f}) and {direction_text} the modelled churn log-odds.'
+                )
+            else:
+                detail = (
+                    f'{leader["Feature"]} has the highest global importance '
+                    f'({leader["Magnitude"]:.3f}) in {model_name}.'
+                )
+            st.markdown(
+                f'<div class="finding blue"><b>Selected-model explanation.</b> {detail} '
+                'This identifies what the fitted model relies on; it does not prove that changing '
+                'the feature will cause churn to change.</div>',
+                unsafe_allow_html=True,
+            )
+
+        with st.expander("Original Figure 9 — Random Forest and XGBoost top-10 importance"):
+            i1, i2 = st.columns(2)
+            with i1:
+                st.markdown("**Figure 9 — Random Forest top-10 importance**")
+                st.plotly_chart(
+                    pc.plot_feature_importance_plotly(rf_imp),
+                    width="stretch",
+                    key="rf_importance_chart",
+                )
+            with i2:
+                st.markdown("**XGBoost top-10 importance**")
+                st.plotly_chart(
+                    pc.plot_feature_importance_plotly(xgb_imp),
+                    width="stretch",
+                    key="xgb_importance_chart",
+                )
+
+        with st.expander("Table 8 — Logistic Regression coefficients & odds ratios"):
+            oc1, oc2 = st.columns(2)
+            oc1.markdown("Top positive (higher churn odds)")
+            oc1.dataframe(
+                lr_coefs.head(8).style.format({"coefficient": "{:.3f}", "odds_ratio": "{:.3f}"}),
+                width="stretch",
+            )
+            oc2.markdown("Top negative (lower churn odds)")
+            oc2.dataframe(
+                lr_coefs.tail(8).sort_values("coefficient").style.format(
+                    {"coefficient": "{:.3f}", "odds_ratio": "{:.3f}"}
+                ),
+                width="stretch",
+            )
+
+        with st.expander("Figure 12 — Decision Tree structure (top 3 of 5 levels)"):
+            show_fig(
+                ev.plot_decision_tree_structure(
+                    models["Decision Tree"], feature_columns, max_depth_display=3
+                )
+            )
+            st.caption(
+                "The root-node split is on a contract/charges-related feature before any demographic "
+                "attribute — a rule-based echo of the Section 2.7 interaction finding."
+            )
+
+    # -- 4.3/5.8 Integrated model reliability workspace --------------------
+    with mo_reliability:
+        sec(
+            "4.3 & 5.8",
+            "Interactive Model Reliability Lab",
+            "Separate two reliability questions: the train-to-test generalisation gap and "
+            "performance stability across five stratified folds.",
+        )
+        reliability_view = st.segmented_control(
+            "Reliability view",
+            ["Generalisation Gap", "Cross-Validation Stability"],
+            default="Generalisation Gap",
+            key="reliability_analysis_view",
+        ) or "Generalisation Gap"
+
         overfit_df = ev.overfitting_check(models, X_train_sm, y_train_sm, X_test_scaled, y_test)
-        oc1, oc2 = st.columns([1, 1])
-        with oc1:
-            st.markdown("**Overfitting table**")
-            st.dataframe(overfit_df.style.format("{:.3f}").background_gradient(cmap="Reds", subset=["Gap"]),
-                       width="stretch")
-        with oc2:
-            st.markdown("**Figure 10 — Train vs Test F1**")
-            st.plotly_chart(pc.plot_overfit_check_plotly(overfit_df),
-                            width="stretch", key="overfit_chart")
-        st.caption("An initial unconstrained Random Forest overfit severely (train F1 0.999 vs test 0.584); "
-                  "regularised GridSearchCV settings shrink this gap while improving test F1 (Section 4.2/5.8).")
+
+        if reliability_view == "Generalisation Gap":
+            selected_gap = overfit_df.loc[model_name]
+            closest_model = overfit_df["Gap"].abs().idxmin()
+            widest_model = overfit_df["Gap"].idxmax()
+            r1, r2, r3 = st.columns(3)
+            r1.metric("Selected train F1", f'{selected_gap["Train F1"]:.3f}')
+            r1.caption("Measured on the SMOTE-balanced training set")
+            r2.metric("Selected test F1", f'{selected_gap["Test F1"]:.3f}')
+            r2.caption("Measured on the natural held-out test set")
+            r3.metric("Generalisation gap", f'{selected_gap["Gap"]:+.3f}')
+            r3.caption(f'Closest train/test values: {closest_model}')
+
+            st.markdown("**Train-to-test F1 movement for all four models**")
+            st.plotly_chart(
+                miv.plot_generalisation_dumbbell(overfit_df, selected_model=model_name),
+                width="stretch",
+                key="generalisation_dumbbell",
+            )
+            st.markdown(
+                f'<div class="finding blue"><b>Generalisation finding.</b> The selected '
+                f'{model_name} changes from train F1 <b>{selected_gap["Train F1"]:.3f}</b> to '
+                f'test F1 <b>{selected_gap["Test F1"]:.3f}</b>, a gap of '
+                f'<b>{selected_gap["Gap"]:+.3f}</b>. {widest_model} has the widest positive gap '
+                f'({overfit_df.loc[widest_model, "Gap"]:+.3f}). Train and test distributions differ, '
+                'so this is evidence to discuss—not a standalone proof of overfitting.</div>',
+                unsafe_allow_html=True,
+            )
+            with st.expander("Original overfitting table and Figure 10"):
+                oc1, oc2 = st.columns([1, 1])
+                with oc1:
+                    st.markdown("**Overfitting table**")
+                    st.dataframe(
+                        overfit_df.style.format("{:.3f}").background_gradient(
+                            cmap="Reds", subset=["Gap"]
+                        ),
+                        width="stretch",
+                    )
+                with oc2:
+                    st.markdown("**Figure 10 — Train vs Test F1**")
+                    st.plotly_chart(
+                        pc.plot_overfit_check_plotly(overfit_df),
+                        width="stretch",
+                        key="overfit_chart",
+                    )
+                st.caption(
+                    "The report's initial unconstrained Random Forest overfit severely "
+                    "(train F1 0.999 vs test 0.584); regularised GridSearchCV settings reduced "
+                    "that gap while improving test F1 (Sections 4.2 and 5.8)."
+                )
+        else:
+            cv_df = compute_cv_results()
+            cv_metric = st.segmented_control(
+                "Cross-validation metric",
+                ["Accuracy", "Precision", "Recall", "F1", "ROC-AUC"],
+                default="F1",
+                key="cv_metric_focus",
+            ) or "F1"
+            cv_ranking = miv.cv_ranking_frame(cv_df, cv_metric)
+            selected_cv = cv_ranking.loc[model_name]
+            cv_leader = cv_ranking.index[0]
+            most_stable = cv_ranking["Std"].idxmin()
+            selected_rank = int(cv_ranking.index.get_loc(model_name) + 1)
+
+            v1, v2, v3 = st.columns(3)
+            v1.metric("Selected CV mean", f'{selected_cv["Mean"] * 100:.1f}%')
+            v1.caption(f'{cv_metric} · rank {selected_rank} of {len(cv_ranking)}')
+            v2.metric("Fold-to-fold SD", f'{selected_cv["Std"] * 100:.1f} pp')
+            v2.caption(f'Lowest variability: {most_stable}')
+            v3.metric(f"Best mean {cv_metric}", cv_leader)
+            v3.caption(f'{cv_ranking.loc[cv_leader, "Mean"] * 100:.1f}%')
+
+            st.markdown(f"**Five-fold {cv_metric} mean and variability**")
+            st.plotly_chart(
+                miv.plot_cv_stability(cv_df, cv_metric, selected_model=model_name),
+                width="stretch",
+                key="cv_stability_chart",
+            )
+            st.markdown(
+                f'<div class="finding green"><b>Cross-validation finding.</b> {cv_leader} has '
+                f'the highest mean {cv_metric} at '
+                f'<b>{cv_ranking.loc[cv_leader, "Mean"] * 100:.1f}%</b>. The selected '
+                f'{model_name} ranks <b>#{selected_rank}</b> with '
+                f'{selected_cv["Mean"] * 100:.1f}% ± {selected_cv["Std"] * 100:.1f} pp. '
+                f'{most_stable} has the lowest fold-to-fold standard deviation for this metric. '
+                'SMOTE is applied inside each fold to avoid synthetic-sample leakage.</div>',
+                unsafe_allow_html=True,
+            )
+            with st.expander("Original Section 4.3 cross-validation results table"):
+                st.dataframe(cv_df.style.format("{:.3f}"), width="stretch")
+                st.caption(
+                    "Cross-validated means can be compared with the hold-out results to judge "
+                    "whether the final ranking depends heavily on one train/test split."
+                )
 
     # -- 5.7 Threshold tuning ------------------------------------------------------
     @st.fragment
-    def render_threshold_tab(models, X_test_scaled, y_test, default_model_name):
-        sec("5.7", "Threshold Tuning", "Sweeping the classification threshold away from the 0.5 default.")
-        thr_model_name = st.selectbox("Model to sweep", list(models.keys()),
-                                      index=list(models.keys()).index(default_model_name), key="thr_model")
-        opt = ev.optimal_threshold(models[thr_model_name], X_test_scaled, y_test)
-        t1, t2, t3 = st.columns(3)
-        t1.metric("F1-optimal threshold", f"{opt['threshold']:.2f}")
-        t2.metric("F1 at optimum", f"{opt['f1']:.3f}")
-        t3.metric("Recall at optimum", f"{opt['recall']:.3f}")
+    def render_threshold_tab(models, X_test_scaled, y_test, selected_model_name):
+        sec(
+            "5.2 & 5.7",
+            "Interactive Error & Threshold Lab",
+            "Compare all four models at the common 0.50 threshold, or explore how the selected "
+            "model converts existing churn probabilities into decisions. No model is retrained.",
+        )
 
-        st.markdown("**🎚️ Explore any threshold live**")
-        explore_thr = st.slider("Classification threshold", 0.10, 0.90, float(opt["threshold"]),
-                                step=0.02, key="explore_thr",
-                                help="Drag to see Precision/Recall/F1 update live, and the marker "
-                                     "line move on the chart below.")
-        live = pc.metrics_at_threshold(models[thr_model_name], X_test_scaled, y_test, explore_thr)
-        l1, l2, l3 = st.columns(3)
-        l1.metric("Precision @ threshold", f"{live['precision']:.3f}")
-        l2.metric("Recall @ threshold", f"{live['recall']:.3f}")
-        l3.metric("F1 @ threshold", f"{live['f1']:.3f}")
+        mode_col, values_col = st.columns([2, 1])
+        with mode_col:
+            analysis_mode = st.segmented_control(
+                "Analysis mode",
+                ["Selected Model", "Compare All Models"],
+                default="Selected Model",
+                key="threshold_analysis_mode",
+                help="Use a fixed 0.50 threshold for a fair four-model comparison, or explore one model interactively.",
+            ) or "Selected Model"
+        with values_col:
+            display_mode = st.segmented_control(
+                "Values",
+                ["Counts", "Percentages"],
+                default="Counts",
+                key="threshold_display_mode",
+            ) or "Counts"
 
-        st.markdown("**Figure 13 — F1-score vs Classification Threshold**")
+        if analysis_mode == "Compare All Models":
+            comparison = miv.all_model_confusion_frame(models, X_test_scaled, y_test, threshold=0.50)
+            winners = miv.all_model_winners(comparison)
+            sample_size = int(comparison.iloc[0][["TN", "FP", "FN", "TP"]].sum())
+
+            st.markdown(
+                f'<div class="finding blue"><b>Fair comparison at threshold 0.50.</b><br>'
+                f'<span style="opacity:.78">Every model is evaluated on the same {sample_size:,} held-out '
+                'customers. Stars mark the best outcome within each error category; the outlined '
+                'bars identify the model selected above.</span></div>',
+                unsafe_allow_html=True,
+            )
+
+            w1, w2, w3 = st.columns(3)
+            w1.metric("Fewest missed churners", winners["lowest_fn_model"])
+            w1.caption(f'{winners["lowest_fn"]:,} false negatives')
+            w2.metric("Fewest false alerts", winners["lowest_fp_model"])
+            w2.caption(f'{winners["lowest_fp"]:,} false positives')
+            w3.metric("Highest F1-score", winners["highest_f1_model"])
+            w3.caption(f'{winners["highest_f1"] * 100:.1f}% F1 at threshold 0.50')
+
+            st.markdown("**How the four models make different mistakes**")
+            st.plotly_chart(
+                miv.plot_all_model_error_comparison(
+                    comparison,
+                    display=display_mode,
+                    selected_model=selected_model_name,
+                ),
+                width="stretch",
+                key="all_model_error_comparison",
+            )
+            st.markdown(
+                f'<div class="finding green"><b>Comparison finding.</b> '
+                f'{winners["lowest_fn_model"]} misses the fewest churners '
+                f'(<b>{winners["lowest_fn"]:,} FN</b>) and catches the most '
+                f'(<b>{winners["highest_tp"]:,} TP</b>), while '
+                f'{winners["lowest_fp_model"]} creates the fewest false alerts '
+                f'(<b>{winners["lowest_fp"]:,} FP</b>). '
+                f'{winners["highest_f1_model"]} retains the strongest F1 balance '
+                f'(<b>{winners["highest_f1"] * 100:.1f}%</b>).</div>',
+                unsafe_allow_html=True,
+            )
+
+            with st.expander("View exact confusion counts and rates for all models"):
+                comparison_table = miv.all_model_comparison_table(comparison, display=display_mode)
+                if display_mode == "Percentages":
+                    table_style = comparison_table.style.format("{:.1f}")
+                else:
+                    table_style = comparison_table.style.format(
+                        {
+                            "FN": "{:,}", "FP": "{:,}", "TP": "{:,}", "TN": "{:,}",
+                            "Precision": "{:.1%}", "Recall": "{:.1%}", "F1": "{:.1%}",
+                        }
+                    )
+                st.dataframe(table_style, width="stretch")
+                st.caption(
+                    "Percentages are class-normalised: FN and TP use all actual churners as the "
+                    "denominator; FP uses all actual retained customers. Report Section 5.2."
+                )
+            return
+
+        st.markdown(
+            f'<div class="finding blue"><b>Currently exploring: '
+            f'{selected_model_name}</b><br><span style="opacity:.78">Use the model cards '
+            f'above to change the model across the application.</span></div>',
+            unsafe_allow_html=True,
+        )
+
+        model = models[selected_model_name]
+        probabilities = miv.probability_vector(model, X_test_scaled)
+        opt = ev.optimal_threshold(model, X_test_scaled, y_test)
+
+        explore_thr = st.slider(
+            "Classification threshold",
+            0.10,
+            0.90,
+            float(opt["threshold"]),
+            step=0.02,
+            key="explore_thr",
+            help="Lower values flag more customers as churn risks; higher values are more selective.",
+        )
+
+        default_snapshot = miv.threshold_snapshot(y_test, probabilities, 0.50)
+        selected_snapshot = miv.threshold_snapshot(y_test, probabilities, explore_thr)
+        sweep = miv.threshold_series(y_test, probabilities)
+
+        st.markdown("**Live operating-point results**")
+        m1, m2, m3, m4, m5 = st.columns(5)
+        m1.metric(
+            "Precision",
+            f"{selected_snapshot['precision'] * 100:.1f}%",
+            f"{(selected_snapshot['precision'] - default_snapshot['precision']) * 100:+.1f} pp vs 0.50",
+        )
+        m2.metric(
+            "Recall",
+            f"{selected_snapshot['recall'] * 100:.1f}%",
+            f"{(selected_snapshot['recall'] - default_snapshot['recall']) * 100:+.1f} pp vs 0.50",
+        )
+        m3.metric(
+            "F1-score",
+            f"{selected_snapshot['f1'] * 100:.1f}%",
+            f"{(selected_snapshot['f1'] - default_snapshot['f1']) * 100:+.1f} pp vs 0.50",
+        )
+        m4.metric(
+            "False negatives",
+            f"{selected_snapshot['fn']:,}",
+            f"{selected_snapshot['fn'] - default_snapshot['fn']:+,} vs 0.50",
+            delta_color="inverse",
+            help="Actual churners predicted as retained — the missed-churn cases.",
+        )
+        m5.metric(
+            "Customers flagged",
+            f"{selected_snapshot['predicted_churn']:,}",
+            f"{selected_snapshot['predicted_churn'] - default_snapshot['predicted_churn']:+,} vs 0.50",
+            delta_color="off",
+        )
+
+        visual_mode = st.segmented_control(
+            "Error view",
+            ["Confusion Matrix", "Prediction Flow"],
+            default="Confusion Matrix",
+            key="threshold_visual_mode",
+            help="Both views contain the same predictions. The flow view emphasises where customers move.",
+        ) or "Confusion Matrix"
+
+        chart_col, compare_col = st.columns([1.55, 1])
+        with chart_col:
+            if visual_mode == "Prediction Flow":
+                st.markdown("**Actual-to-predicted customer flow**")
+                st.plotly_chart(
+                    miv.plot_confusion_sankey(selected_snapshot, display_mode),
+                    width="stretch",
+                    key="threshold_sankey",
+                )
+            else:
+                st.markdown("**Confusion matrix at the selected threshold**")
+                st.plotly_chart(
+                    miv.plot_confusion_matrix(selected_snapshot, display_mode),
+                    width="stretch",
+                    key="threshold_confusion_matrix",
+                )
+        with compare_col:
+            st.markdown("**Default vs selected**")
+            st.dataframe(
+                miv.comparison_frame(default_snapshot, selected_snapshot),
+                hide_index=True,
+                width="stretch",
+            )
+            st.markdown(
+                f'<div class="finding blue"><b>Decision trade-off.</b> At threshold '
+                f'<b>{explore_thr:.2f}</b>, {selected_model_name} catches '
+                f'<b>{selected_snapshot["tp"]:,}</b> churners and misses '
+                f'<b>{selected_snapshot["fn"]:,}</b>. Compared with 0.50, this is '
+                f'<b>{selected_snapshot["fn"] - default_snapshot["fn"]:+,}</b> missed cases and '
+                f'<b>{selected_snapshot["fp"] - default_snapshot["fp"]:+,}</b> false alerts.</div>',
+                unsafe_allow_html=True,
+            )
+
+        st.markdown("**How the operating trade-off changes across thresholds**")
         st.plotly_chart(
-            pc.plot_threshold_curve_plotly(models, X_test_scaled, y_test,
-                                           model_names_to_plot=list(models.keys()),
-                                           marker_threshold=explore_thr),
-            width="stretch", key="threshold_chart")
-        st.caption("5.7/5.9 — Churn prediction has an asymmetric cost (a missed churner costs far more "
-                  "than a false alarm), so operating below the default 0.5 threshold can trade a little "
-                  "Precision for meaningfully higher Recall without retraining anything.")
+            miv.plot_threshold_tradeoff_2d(sweep, explore_thr, selected_model_name),
+            width="stretch",
+            key="threshold_tradeoff_2d",
+        )
+        st.caption(
+            f"The F1-optimal threshold for {selected_model_name} on this held-out test set is "
+            f"{opt['threshold']:.2f}. Lower thresholds usually improve Recall by accepting more "
+            "false alerts; the trained model and its probabilities remain unchanged."
+        )
+
+        with st.expander("Advanced interactive view — explore the trade-off in 3D"):
+            st.caption(
+                "Rotate or zoom the curve. Threshold is on the x-axis, Precision and Recall form "
+                "the other two axes, colour represents F1-score, and the red point is your selection."
+            )
+            st.plotly_chart(
+                miv.plot_threshold_tradeoff_3d(sweep, explore_thr, selected_model_name),
+                width="stretch",
+                key="threshold_tradeoff_3d",
+            )
 
     with mo_threshold:
         render_threshold_tab(models, X_test_scaled, y_test, model_name)
-
-    # -- 4.3 Cross-validation --------------------------------------------------
-    with mo_cv:
-        sec("4.3", "5-Fold Stratified Cross-Validation (All Models)",
-            "Confirms Section 5.2's single-split results are stable, not a lucky/unlucky split. "
-            "SMOTE is applied fresh inside each fold.")
-        cv_df = compute_cv_results()
-        st.dataframe(cv_df.style.format("{:.3f}"), width="stretch")
-        st.caption("Cross-validated means line up with the hold-out results within 1-2 percentage "
-                  "points, with standard deviations mostly under 3pp — performance is stable across "
-                  "partitions of the data, not dependent on this one split.")
 
 st.divider()
 st.caption(

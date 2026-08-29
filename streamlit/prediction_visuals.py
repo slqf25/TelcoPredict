@@ -1,0 +1,206 @@
+"""Interactive, telecom-themed visuals for a single churn prediction."""
+
+from html import escape
+
+import plotly.graph_objects as go
+
+
+LOW = "#5F8F78"
+AMBER = "#E8A317"
+RED = "#C84B45"
+INK = "#27313D"
+MUTED = "#7B8491"
+
+
+def _risk_color(value: float) -> str:
+    return LOW if value < 40 else (AMBER if value < 70 else RED)
+
+
+def hero_html(probability: float, risk_label: str, risk_color: str,
+              model_name: str, base_rate: float = 26.54) -> str:
+    """Border-light result hero; all values are display-only."""
+    probability = max(0.0, min(100.0, float(probability)))
+    signal_bars = max(0, min(5, round((100 - probability) / 20)))
+    bars = "".join(
+        f'<i style="height:{7 + index * 5}px;opacity:{1 if index <= signal_bars else .16}"></i>'
+        for index in range(1, 6)
+    )
+    return f"""
+<style>
+  .prediction-hero {{
+    display:grid; grid-template-columns:minmax(210px,.8fr) minmax(280px,1.2fr);
+    align-items:center; gap:28px; padding:24px 12px 22px; margin:5px 0 2px;
+    border-top:1px solid rgba(104,115,128,.20);
+    border-bottom:1px solid rgba(104,115,128,.20);
+  }}
+  .prediction-reading {{ display:flex; align-items:center; gap:18px; }}
+  .prediction-orbit {{
+    width:104px; height:104px; flex:0 0 104px; border-radius:50%; display:grid;
+    place-items:center; color:{risk_color}; position:relative;
+    background:radial-gradient(circle,rgba(255,255,255,.96) 35%,transparent 37%),
+      conic-gradient({risk_color} {probability:.1f}%,rgba(126,137,149,.13) 0);
+    box-shadow:0 0 28px color-mix(in srgb,{risk_color} 22%,transparent);
+  }}
+  .prediction-orbit::after {{ content:'cell_tower'; font-family:'Material Symbols Rounded';
+    font-size:34px; color:{risk_color}; }}
+  .prediction-value {{ font-size:clamp(2rem,3.3vw,3.3rem); line-height:.95;
+    font-weight:820; letter-spacing:-2px; color:#27313d; }}
+  .prediction-kicker {{ color:{risk_color}; font-size:.76rem; letter-spacing:.13em;
+    font-weight:820; text-transform:uppercase; margin-bottom:8px; }}
+  .prediction-copy h3 {{ margin:0 0 7px; font-size:1.22rem; color:#27313d; }}
+  .prediction-copy p {{ margin:0; color:#78828f; line-height:1.55; }}
+  .prediction-meta {{ display:flex; gap:9px; flex-wrap:wrap; margin-top:14px; }}
+  .prediction-meta span {{ border-left:2px solid {risk_color}; padding:3px 10px;
+    color:#535e6b; font-size:.82rem; background:rgba(255,255,255,.42); }}
+  .prediction-signal {{ height:34px; display:flex; align-items:flex-end; gap:4px; margin-top:13px; }}
+  .prediction-signal i {{ display:block; width:7px; background:{risk_color};
+    border-radius:2px 2px 0 0; }}
+  @media(max-width:760px) {{ .prediction-hero {{ grid-template-columns:1fr; }} }}
+</style>
+<section class="prediction-hero" aria-label="Prediction result">
+  <div class="prediction-reading">
+    <div class="prediction-orbit" aria-hidden="true"></div>
+    <div><div class="prediction-kicker">{escape(risk_label)}</div>
+      <div class="prediction-value">{probability:.1f}%</div></div>
+  </div>
+  <div class="prediction-copy">
+    <h3>Customer churn signal</h3>
+    <p>The selected model places this customer in the <b>{escape(risk_label.lower())}</b>
+      band. The visuals below locate the score against decision thresholds and the
+      other deployed models.</p>
+    <div class="prediction-meta"><span>{escape(model_name)}</span>
+      <span>Dataset base rate&nbsp; {base_rate:.1f}%</span>
+      <span>{signal_bars}/5 retention signal</span></div>
+    <div class="prediction-signal" aria-label="{signal_bars} of 5 retention signal bars">{bars}</div>
+  </div>
+</section>"""
+
+
+def signal_spectrum(probability: float, base_rate: float = 26.54) -> go.Figure:
+    """Compact signal route with explicit thresholds and base-rate context."""
+    probability = float(probability)
+    fig = go.Figure()
+
+    # A single telecom-style route is easier to scan than three large background
+    # rectangles. Small endpoint markers visually round Plotly's line caps.
+    bands = (
+        (0, 40, LOW, "Stable"),
+        (40, 70, AMBER, "At risk"),
+        (70, 100, RED, "Critical"),
+    )
+    for start, end, color, label in bands:
+        fig.add_trace(go.Scatter(
+            x=[start, end], y=[0, 0], mode="lines", showlegend=False,
+            line=dict(color=color, width=15),
+            hovertemplate=f"{label}: {start}–{end}%<extra></extra>",
+        ))
+        fig.add_annotation(
+            x=(start + end) / 2, y=.31, text=f"<b>{label.upper()}</b>",
+            showarrow=False, font=dict(size=11, color=color),
+        )
+    fig.add_trace(go.Scatter(
+        x=[0, 40, 40, 70, 70, 100], y=[0] * 6,
+        mode="markers", showlegend=False, hoverinfo="skip",
+        marker=dict(size=15, color=[LOW, LOW, AMBER, AMBER, RED, RED]),
+    ))
+
+    for threshold, label in ((40, "40%"), (70, "70%")):
+        fig.add_shape(
+            type="line", x0=threshold, x1=threshold, y0=-.17, y1=.18,
+            line=dict(color="rgba(74,84,96,.50)", width=2, dash="dot"),
+        )
+        fig.add_annotation(
+            x=threshold, y=-.29, text=f"<b>{label}</b><br>threshold",
+            showarrow=False, align="center", font=dict(size=10, color=MUTED),
+        )
+
+    fig.add_trace(go.Scatter(
+        x=[base_rate], y=[0], mode="markers+text", name="Dataset base rate",
+        marker=dict(symbol="line-ns", size=25, color=MUTED,
+                    line=dict(width=3, color=MUTED)),
+        text=[f"Base {base_rate:.1f}%"], textposition="bottom center",
+        textfont=dict(size=11, color=MUTED),
+        hovertemplate="Dataset churn base rate: %{x:.1f}%<extra></extra>",
+    ))
+
+    # Layered translucent markers create a restrained signal glow without turning
+    # the result into a conventional speedometer gauge.
+    prediction_color = _risk_color(probability)
+    for size, opacity in ((42, .10), (31, .18)):
+        fig.add_trace(go.Scatter(
+            x=[probability], y=[0], mode="markers", showlegend=False,
+            marker=dict(symbol="diamond", size=size, color=prediction_color,
+                        opacity=opacity), hoverinfo="skip",
+        ))
+    fig.add_trace(go.Scatter(
+        x=[probability], y=[0], mode="markers", name="This customer",
+        marker=dict(symbol="diamond", size=18, color=prediction_color,
+                    line=dict(width=2, color="white")),
+        hovertemplate="Predicted churn probability: %{x:.1f}%<extra></extra>",
+    ))
+    delta = probability - base_rate
+    fig.add_annotation(
+        x=probability, y=.18,
+        text=(f"<b>THIS CUSTOMER&nbsp; {probability:.1f}%</b>"
+              f"<br><span style='font-size:10px'>{delta:+.1f} pp vs base rate</span>"),
+        showarrow=True, arrowhead=0, arrowwidth=1.5, arrowcolor=prediction_color,
+        ax=0, ay=-53, bgcolor="rgba(255,255,255,.96)",
+        bordercolor=prediction_color, borderwidth=1, borderpad=7,
+        font=dict(size=12, color=INK), align="center",
+    )
+    fig.update_layout(
+        height=225, template="plotly_white", showlegend=False,
+        margin=dict(l=26, r=26, t=67, b=51),
+        font=dict(family="Segoe UI, sans-serif", color=INK),
+        hoverlabel=dict(bgcolor="white", font_size=12),
+        xaxis=dict(range=[-1, 101], tickvals=[0, 20, 40, 60, 70, 80, 100],
+                   ticksuffix="%", fixedrange=True, title=None, showgrid=False,
+                   zeroline=False, tickfont=dict(size=10, color=MUTED)),
+        yaxis=dict(range=[-.43, .56], visible=False, fixedrange=True),
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        transition=dict(duration=450, easing="cubic-in-out"),
+    )
+    return fig
+
+
+def model_consensus(all_probs: dict, selected_model: str, metrics: dict) -> go.Figure:
+    """Four-model dot plot with decision bands and evaluation context on hover."""
+    names = list(all_probs)
+    values = [float(all_probs[name]) for name in names]
+    colors = [_risk_color(value) for value in values]
+    symbols = ["star" if name == selected_model else "circle" for name in names]
+    sizes = [18 if name == selected_model else 13 for name in names]
+    custom = [[metrics[name]["AUC"], metrics[name]["Recall"]] for name in names]
+
+    fig = go.Figure()
+    for start, end, color in (
+        (0, 40, "rgba(95,143,120,.10)"),
+        (40, 70, "rgba(232,163,23,.11)"),
+        (70, 100, "rgba(200,75,69,.10)"),
+    ):
+        fig.add_vrect(x0=start, x1=end, fillcolor=color, line_width=0)
+    for index, value in enumerate(values):
+        fig.add_shape(type="line", x0=0, x1=value, y0=index, y1=index,
+                      line=dict(color="rgba(116,127,139,.28)", width=2))
+    fig.add_trace(go.Scatter(
+        x=values, y=names, mode="markers+text", text=[f"{value:.1f}%" for value in values],
+        textposition="middle right", cliponaxis=False,
+        marker=dict(color=colors, symbol=symbols, size=sizes,
+                    line=dict(color="white", width=2)), customdata=custom,
+        hovertemplate=("<b>%{y}</b><br>Churn probability: %{x:.1f}%"
+                       "<br>Test AUC: %{customdata[0]:.3f}"
+                       "<br>Test recall: %{customdata[1]:.1f}%<extra></extra>"),
+    ))
+    spread = max(values) - min(values)
+    fig.update_layout(
+        height=285, template="plotly_white", showlegend=False,
+        margin=dict(l=12, r=58, t=18, b=38),
+        font=dict(family="Segoe UI, sans-serif", color=INK),
+        hoverlabel=dict(bgcolor="white", font_size=12),
+        xaxis=dict(range=[0, 106], ticksuffix="%", fixedrange=True,
+                   title=f"Prediction range · {spread:.1f} percentage-point spread",
+                   gridcolor="rgba(120,130,140,.12)"),
+        yaxis=dict(autorange="reversed", fixedrange=True),
+        transition=dict(duration=500, easing="cubic-in-out"),
+    )
+    return fig
