@@ -204,3 +204,114 @@ def model_consensus(all_probs: dict, selected_model: str, metrics: dict) -> go.F
         transition=dict(duration=500, easing="cubic-in-out"),
     )
     return fig
+
+
+_IMPORTANCE_GROUPS = (
+    ("Gender", ("gender",), "gender"),
+    ("Senior citizen", ("SeniorCitizen",), "senior_citizen"),
+    ("Partner", ("Partner",), "partner"),
+    ("Dependents", ("Dependents",), "dependents"),
+    ("Tenure", ("tenure",), "tenure"),
+    ("Phone service", ("PhoneService",), "phone_service"),
+    ("Multiple lines", ("MultipleLines",), "multiple_lines"),
+    ("Online security", ("OnlineSecurity",), "OnlineSecurity"),
+    ("Online backup", ("OnlineBackup",), "OnlineBackup"),
+    ("Device protection", ("DeviceProtection",), "DeviceProtection"),
+    ("Tech support", ("TechSupport",), "TechSupport"),
+    ("Streaming TV", ("StreamingTV",), "StreamingTV"),
+    ("Streaming movies", ("StreamingMovies",), "StreamingMovies"),
+    ("Paperless billing", ("PaperlessBilling",), "paperless_billing"),
+    ("Monthly charges", ("MonthlyCharges",), "monthly_charges"),
+    ("Total charges", ("TotalCharges",), "total_charges"),
+    ("Contract type", ("ContractRiskScore",), "contract"),
+    ("Charges / tenure", ("ChargesToTenureRatio",), "charges_tenure"),
+    ("Internet service", ("InternetService_Fiber optic", "InternetService_No"),
+     "internet_service"),
+    ("Payment method", ("PaymentMethod_Credit card (automatic)",
+                        "PaymentMethod_Electronic check",
+                        "PaymentMethod_Mailed check"), "payment_method"),
+)
+
+
+def _customer_value(profile: dict, value_key: str) -> str:
+    if value_key in profile:
+        value = profile[value_key]
+    else:
+        value = profile.get("addons", {}).get(value_key, "Not available")
+    if value_key == "tenure":
+        return f"{int(value)} months"
+    if value_key == "monthly_charges":
+        return f"${float(value):,.1f}/mo"
+    if value_key == "total_charges":
+        return f"${float(value):,.2f}"
+    if value_key == "charges_tenure":
+        tenure = max(float(profile.get("tenure", 0)), 1.0)
+        return f"${float(profile.get('total_charges', 0)) / tenure:,.1f}/mo"
+    return str(value)
+
+
+def importance_skyline(raw_importances: dict, profile: dict,
+                       model_name: str, top_n: int = 6) -> go.Figure:
+    """Vertical, business-level view of model-wide relative importance.
+
+    One-hot columns belonging to the same user-facing field are summed before
+    ranking. This remains a global model summary, not a local contribution chart.
+    """
+    grouped = []
+    for label, columns, value_key in _IMPORTANCE_GROUPS:
+        score = sum(abs(float(raw_importances.get(column, 0.0))) for column in columns)
+        grouped.append({
+            "label": label,
+            "columns": ", ".join(columns),
+            "score": score,
+            "customer": _customer_value(profile, value_key),
+        })
+    total = sum(item["score"] for item in grouped) or 1.0
+    for item in grouped:
+        item["relative"] = item["score"] / total * 100
+    ranked = sorted(grouped, key=lambda item: item["relative"], reverse=True)[:top_n]
+
+    labels = [item["label"] for item in ranked]
+    values = [item["relative"] for item in ranked]
+    customers = [item["customer"] for item in ranked]
+    columns = [item["columns"] for item in ranked]
+    tick_labels = [
+        f"{label.replace(' ', '<br>', 1)}<br><span style='font-size:10px'>"
+        f"Customer: {escape(customer)}</span>"
+        for label, customer in zip(labels, customers)
+    ]
+    colors = [AMBER if index < 2 else "#89949F" for index in range(len(ranked))]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=labels, y=values, width=.48, marker=dict(color=colors),
+        text=[f"{value:.1f}%" for value in values], textposition="outside",
+        textfont=dict(size=12, color=INK), cliponaxis=False,
+        customdata=[[customer, column] for customer, column in zip(customers, columns)],
+        hovertemplate=(f"<b>%{{x}}</b><br>Relative importance: %{{y:.1f}}%"
+                       "<br>This customer: %{customdata[0]}"
+                       "<br>Model input(s): %{customdata[1]}"
+                       f"<br>Selected model: {escape(model_name)}<extra></extra>"),
+    ))
+    # Small caps make each column read as a signal mast rather than a generic bar.
+    fig.add_trace(go.Scatter(
+        x=labels, y=values, mode="markers", showlegend=False, hoverinfo="skip",
+        marker=dict(symbol="diamond", size=10, color=colors,
+                    line=dict(color="white", width=1.5)),
+    ))
+    ceiling = max(values) * 1.30 if values else 1
+    fig.update_layout(
+        height=360, template="plotly_white", showlegend=False, bargap=.43,
+        margin=dict(l=44, r=22, t=28, b=92),
+        font=dict(family="Segoe UI, sans-serif", color=INK),
+        hoverlabel=dict(bgcolor="white", font_size=12),
+        xaxis=dict(tickmode="array", tickvals=labels, ticktext=tick_labels,
+                   fixedrange=True, tickfont=dict(size=11, color=INK),
+                   showgrid=False, title=None),
+        yaxis=dict(range=[0, ceiling], ticksuffix="%", fixedrange=True,
+                   title="Relative model importance",
+                   gridcolor="rgba(120,130,140,.13)", zeroline=False),
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        transition=dict(duration=500, easing="cubic-in-out"),
+    )
+    return fig

@@ -115,7 +115,7 @@ def main():
         "Random Forest": RandomForestClassifier(
             n_estimators=200, max_depth=12, min_samples_leaf=5, random_state=42),
         "XGBoost": XGBClassifier(
-            max_depth=4, learning_rate=0.1, n_estimators=150, min_child_weight=10,
+            max_depth=4, learning_rate=0.1, n_estimators=150, min_child_weight=5,
             subsample=0.8, colsample_bytree=0.8, reg_lambda=1,
             random_state=42, eval_metric="logloss"),
     }
