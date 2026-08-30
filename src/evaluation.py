@@ -77,7 +77,11 @@ def kfold_cv_all_models(X_train_scaled, y_train, model_builders: dict, n_splits:
     rows = {}
     for name, estimator in model_builders.items():
         pipe = ImbPipeline([("smote", SMOTE(random_state=42)), ("clf", estimator)])
-        cv_res = cross_validate(pipe, X_train_scaled, y_train, cv=skf, scoring=scoring, n_jobs=-1)
+        # n_jobs=1, not -1: this runs live on the deployed Streamlit app (see
+        # app.py's compute_cv_results), where joblib spawning one subprocess per
+        # CPU core each duplicating the SMOTE+model pipeline is what pushed the
+        # free-tier host over its 1GB memory cap.
+        cv_res = cross_validate(pipe, X_train_scaled, y_train, cv=skf, scoring=scoring, n_jobs=1)
         rows[name] = {f"{s}_mean": cv_res[f"test_{s}"].mean() for s in scoring}
         rows[name].update({f"{s}_std": cv_res[f"test_{s}"].std() for s in scoring})
         # Retain the already-computed validation score from each fold so the
