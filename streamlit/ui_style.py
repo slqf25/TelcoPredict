@@ -86,6 +86,28 @@ def inject_css():
   .stButton > button:hover {{
       transform: scale(1.02);
   }}
+  /* Blue is the interaction colour. Red is reserved for churn/risk evidence. */
+  button[data-testid="stBaseButton-primary"] {{
+      background:{BLUE} !important; border-color:{BLUE} !important; color:#fff !important;
+  }}
+  button[data-testid="stBaseButton-primary"]:hover {{
+      background:{NAVY} !important; border-color:{NAVY} !important;
+  }}
+  button[data-variant="segmented_control"][aria-checked="true"] {{
+      background:color-mix(in srgb, {BLUE} 12%, transparent) !important;
+      border-color:{BLUE} !important; color:{BLUE} !important;
+  }}
+  button[data-variant="segmented_control"][aria-checked="true"] p {{
+      color:{BLUE} !important; font-weight:700 !important;
+  }}
+  button[data-variant="segmented_control"][aria-checked="false"]:hover {{
+      border-color:color-mix(in srgb, {BLUE} 55%, transparent) !important;
+      color:{BLUE} !important;
+  }}
+  button[data-variant="segmented_control"]:focus-visible {{
+      outline:3px solid color-mix(in srgb, {BLUE} 28%, transparent) !important;
+      outline-offset:2px;
+  }}
 
   /* Inputs (Squircles) */
   .stSelectbox > div > div,
@@ -161,11 +183,13 @@ def inject_css():
     vertical-align:middle; line-height:1; display:inline-block; }}
 
   /* Glass Findings */
-  .finding {{ border-left: 6px solid {RED}; background:{RED}15; border-radius: 0 20px 20px 0;
+  .finding {{ border-left: 6px solid {BLUE}; background:{BLUE}15; border-radius: 0 20px 20px 0;
     backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
     padding:16px 20px; margin:12px 0; box-shadow: 0 4px 20px rgba(0,0,0,0.02); }}
   .finding.blue {{ border-left-color:{BLUE}; background:{BLUE}15; }}
   .finding.green {{ border-left-color:{GREEN}; background:{GREEN}15; }}
+  .finding.amber {{ border-left-color:{AMBER}; background:{AMBER}15; }}
+  .finding.red {{ border-left-color:{RED}; background:{RED}15; }}
 
   .secnote {{ color: var(--text-color); opacity: 0.6; font-size:.95rem; margin:-4px 0 12px; }}
 

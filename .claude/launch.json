@@ -4,8 +4,8 @@
     {
       "name": "streamlit-churn-app",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "streamlit", "run", "D:/RDS/Y2S1/data science/asm/ds_codebase/streamlit/app.py", "--server.port", "8502", "--server.headless", "true"],
-      "port": 8502
+      "runtimeArgs": ["-m", "streamlit", "run", "D:/RDS/Y2S1/data science/asm/ds_codebase/streamlit/app.py", "--server.port", "8503", "--server.headless", "true"],
+      "port": 8503
     }
   ]
 }

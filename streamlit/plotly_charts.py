@@ -31,8 +31,8 @@ from sklearn.metrics import (
 
 NAVY, BLUE, LIGHT, RED = "#1F4E79", "#2E75B6", "#9DC3E6", "#C00000"
 GREEN, AMBER = "#2E8B57", "#E8A317"
-PALETTE = [NAVY, BLUE, LIGHT, RED]
-STRENGTH_COLOR = {"negligible": LIGHT, "weak": BLUE, "moderate": NAVY, "strong": RED}
+PALETTE = [NAVY, BLUE, GREEN, "#7A5AA6"]
+STRENGTH_COLOR = {"negligible": LIGHT, "weak": BLUE, "moderate": NAVY, "strong": "#7A5AA6"}
 
 TRANSITION = dict(duration=500, easing="cubic-in-out")
 
@@ -180,9 +180,9 @@ def plot_threshold_curve_plotly(models, X_test, y_test, model_names_to_plot=None
                   annotation_text="default (0.5)", annotation_position="bottom",
                   annotation_yshift=-10, annotation_font_size=10)
     if marker_threshold is not None:
-        fig.add_vline(x=marker_threshold, line_dash="solid", line_color=RED, line_width=2,
+        fig.add_vline(x=marker_threshold, line_dash="solid", line_color=NAVY, line_width=2,
                       annotation_text=f"selected {marker_threshold:.2f}", annotation_position="top",
-                      annotation_yshift=-6, annotation_font_size=10, annotation_font_color=RED)
+                      annotation_yshift=-6, annotation_font_size=10, annotation_font_color=NAVY)
     return _base_layout(fig, height=440,
                         xaxis_title="Classification Threshold", yaxis_title="F1-score")
 
@@ -211,21 +211,33 @@ def plot_target_distribution_plotly(df, target_col="Churn"):
 
 
 def plot_churn_rate_by_category_plotly(df, category_col, target_col="Churn", order=None):
-    """Figure 2 / 3 — churn rate (%) by a single categorical column."""
+    """Figure 2 / 3 — churn rate (%) by category, with sample-size context."""
     tmp = df.copy()
     tmp["_c"] = _churn01(tmp, target_col)
-    rates = (tmp.groupby(category_col, observed=True)["_c"].mean() * 100)
+    grouped = tmp.groupby(category_col, observed=True)["_c"].agg(["mean", "size"])
+    grouped["rate"] = grouped["mean"] * 100
     if order is not None:
-        rates = rates.reindex([o for o in order if o in rates.index])
+        grouped = grouped.reindex([o for o in order if o in grouped.index])
     else:
-        rates = rates.sort_values()
+        grouped = grouped.sort_values("rate")
+    rates = grouped["rate"]
+    counts = grouped["size"].astype(int)
+    overall = float(tmp["_c"].mean() * 100)
     norm = rates.values / max(rates.values.max(), 1e-9)
     colors = [f"rgb({int(31+150*n)},{int(78+40*n)},{int(121-80*n)})" for n in norm]
     fig = go.Figure(go.Bar(
         x=[str(i) for i in rates.index], y=rates.values, marker_color=colors,
         text=rates.round(1), texttemplate="%{text}", textposition="outside",
-        hovertemplate="%{x}: %{y:.1f}%<extra></extra>",
+        customdata=np.column_stack([counts.values, rates.values - overall]),
+        hovertemplate=(
+            "%{x}<br>Churn rate: %{y:.1f}%<br>Customers: %{customdata[0]:,.0f}"
+            "<br>Difference from overall: %{customdata[1]:+.1f} pp<extra></extra>"
+        ),
     ))
+    fig.add_hline(
+        y=overall, line_dash="dash", line_color=NAVY,
+        annotation_text=f"Overall {overall:.1f}%", annotation_position="top left",
+    )
     return _base_layout(fig, height=420, yaxis_title="Churn rate (%)", show_legend=False)
 
 
@@ -234,15 +246,25 @@ def plot_churn_rate_by_tenuregroup_plotly(df, target_col="Churn"):
     order = ["0-12", "13-24", "25-48", "49-60", "61+"]
     tmp = df.copy()
     tmp["_c"] = _churn01(tmp, target_col)
-    rates = (tmp.groupby("TenureGroup", observed=True)["_c"].mean() * 100)
-    rates = rates.reindex([o for o in order if o in rates.index])
+    grouped = tmp.groupby("TenureGroup", observed=True)["_c"].agg(["mean", "size"])
+    grouped["rate"] = grouped["mean"] * 100
+    grouped = grouped.reindex([o for o in order if o in grouped.index])
+    rates = grouped["rate"]
+    counts = grouped["size"].astype(int)
+    overall = float(tmp["_c"].mean() * 100)
     fig = go.Figure()
     fig.add_bar(x=[str(i) for i in rates.index], y=rates.values, marker_color=BLUE,
                text=rates.round(1), texttemplate="%{text}", textposition="outside",
-               hovertemplate="%{x}: %{y:.1f}%<extra></extra>", showlegend=False)
+               customdata=counts.values,
+               hovertemplate="%{x}<br>Churn rate: %{y:.1f}%<br>Customers: %{customdata:,}<extra></extra>",
+               showlegend=False)
     fig.add_scatter(x=[str(i) for i in rates.index], y=rates.values, mode="lines+markers",
                     line=dict(color=RED, width=2), marker=dict(size=6, color=RED),
                     hoverinfo="skip", showlegend=False)
+    fig.add_hline(
+        y=overall, line_dash="dash", line_color=NAVY,
+        annotation_text=f"Overall {overall:.1f}%", annotation_position="top right",
+    )
     return _base_layout(fig, height=420, xaxis_title="Tenure group (months)",
                         yaxis_title="Churn rate (%)", show_legend=False)
 
@@ -271,35 +293,49 @@ def plot_correlation_with_target_plotly(df, numeric_cols, target_col="Churn"):
 
 
 def plot_interaction_heatmap_plotly(df, row_col, col_col, target_col="Churn",
-                                    row_order=None, col_order=None):
-    """Figure 5 / 5b — two-way interaction heatmap of churn rate (%)."""
+                                    row_order=None, col_order=None, height=None):
+    """Figure 5 / 5b — two-way churn heatmap with rate and cell sample size."""
     tmp = df.copy()
     tmp["_c"] = _churn01(tmp, target_col)
     pivot = tmp.pivot_table("_c", row_col, col_col, aggfunc="mean", observed=True) * 100
+    counts = tmp.pivot_table("_c", row_col, col_col, aggfunc="size", observed=True)
     if row_order is not None:
         pivot = pivot.reindex([r for r in row_order if r in pivot.index])
+        counts = counts.reindex(pivot.index)
     if col_order is not None:
         pivot = pivot.reindex(columns=[c for c in col_order if c in pivot.columns])
+        counts = counts.reindex(columns=pivot.columns)
+    annotation = np.empty(pivot.shape, dtype=object)
+    for row in range(pivot.shape[0]):
+        for col in range(pivot.shape[1]):
+            annotation[row, col] = f"{pivot.iloc[row, col]:.1f}%<br>n={int(counts.iloc[row, col]):,}"
     fig = go.Figure(go.Heatmap(
         z=pivot.values, x=[str(c) for c in pivot.columns], y=[str(r) for r in pivot.index],
-        colorscale="Reds", text=pivot.round(1).values, texttemplate="%{text}",
-        hovertemplate=f"{row_col} %{{y}}, {col_col} %{{x}}: %{{z:.1f}}%<extra></extra>",
+        colorscale="Reds", text=annotation, texttemplate="%{text}",
+        customdata=counts.values,
+        hovertemplate=(
+            f"{row_col} %{{y}}, {col_col} %{{x}}"
+            "<br>Churn rate: %{z:.1f}%<br>Customers: %{customdata:,.0f}<extra></extra>"
+        ),
         colorbar=dict(title="Churn %"),
     ))
-    return _base_layout(fig, height=max(320, 90 * len(pivot) + 80),
+    chart_height = height or max(320, 90 * len(pivot) + 80)
+    return _base_layout(fig, height=chart_height,
                         xaxis_title=col_col, yaxis_title=row_col, show_legend=False)
 
 
-def plot_tenure_service_interaction_plotly(df, target_col="Churn"):
+def plot_tenure_service_interaction_plotly(df, target_col="Churn", height=None):
     """Figure 5b — resolves the non-monotonic TotalServicesSubscribed pattern by
     holding tenure fixed (see src/eda_plots.py:plot_tenure_service_interaction)."""
     d = df.copy()
-    d["ServiceBin"] = pd.cut(d["TotalServicesSubscribed"], bins=[-1, 1, 3, 5, 8],
-                             labels=["0-1", "2-3", "4-5", "6-8"])
+    d["Subscribed services"] = pd.cut(
+        d["TotalServicesSubscribed"], bins=[-1, 1, 3, 5, 8],
+        labels=["0-1", "2-3", "4-5", "6-8"],
+    )
     return plot_interaction_heatmap_plotly(
-        d, "TenureGroup", "ServiceBin", target_col=target_col,
+        d, "TenureGroup", "Subscribed services", target_col=target_col,
         row_order=["0-12", "13-24", "25-48", "49-60", "61+"],
-        col_order=["0-1", "2-3", "4-5", "6-8"])
+        col_order=["0-1", "2-3", "4-5", "6-8"], height=height)
 
 
 def _subplot_grid_layout(fig, n, ncols, row_height=280, has_legend=False):
@@ -415,7 +451,7 @@ def plot_confusion_matrices_plotly(models, X_test, y_test):
 def plot_feature_importance_plotly(importances, top_n=10):
     """Figures 9/9b — top-N feature importances for a tree-based model."""
     top = importances.sort_values(ascending=True).tail(top_n)
-    colors = [RED if ("Charges" in i or "Contract" in i or i == "tenure") else BLUE
+    colors = [AMBER if ("Charges" in i or "Contract" in i or i == "tenure") else BLUE
              for i in top.index]
     fig = go.Figure(go.Bar(
         x=top.values, y=top.index, orientation="h", marker_color=colors,

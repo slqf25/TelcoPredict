@@ -9,6 +9,10 @@ __pycache__/
 *.pkl
 !streamlit/*.pkl
 
+# Scratch reference material (spec/rubric PDF screenshots, extracted text) —
+# not part of the deliverable, strip before packaging the submission ZIP.
+tmp/
+
 # OS
 .DS_Store
 Thumbs.db

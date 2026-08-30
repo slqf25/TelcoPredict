@@ -368,7 +368,7 @@ def plot_generalisation_dumbbell(
         y=models,
         mode="markers",
         name="Test F1",
-        marker=dict(color=RED, size=13, symbol="diamond"),
+        marker=dict(color=BLUE, size=13, symbol="diamond"),
         customdata=frame["Gap"],
         hovertemplate="%{y}<br>Test F1: %{x:.3f}<br>Gap: %{customdata:.3f}<extra></extra>",
     )
@@ -765,22 +765,42 @@ def plot_confusion_sankey(snapshot: dict, display: str = "Counts") -> go.Figure:
         value_suffix = "customers"
         value_format = ",.0f"
 
+    node_titles = [
+        "Actual retained",
+        "Actual churn",
+        "Predicted retained",
+        "Predicted churn",
+    ]
+    node_counts = np.array(
+        [
+            snapshot["tn"] + snapshot["fp"],
+            snapshot["fn"] + snapshot["tp"],
+            snapshot["tn"] + snapshot["fn"],
+            snapshot["fp"] + snapshot["tp"],
+        ],
+        dtype=float,
+    )
+
+    def annotation_text(title: str, count: float) -> str:
+        if display == "Percentages":
+            detail = f"{count / snapshot['n'] * 100:.1f}% of test set"
+        else:
+            detail = f"{count:,.0f} customers"
+        return f"<b>{title}</b><br>{detail}"
+
     link_labels = ["TN", "FP", "FN", "TP"]
     fig = go.Figure(
         go.Sankey(
-            arrangement="snap",
+            arrangement="fixed",
             node=dict(
                 pad=28,
                 thickness=22,
                 line=dict(color="rgba(31,78,121,.25)", width=1),
-                label=[
-                    "Actual: Retained",
-                    "Actual: Churn",
-                    "Predicted: Retained",
-                    "Predicted: Churn",
-                ],
+                # Native Sankey labels sit directly on the links and become muddy at
+                # presentation scale. Clear annotation cards are added below instead.
+                label=["", "", "", ""],
                 color=[LIGHT, "#E6A1A1", NAVY, GREEN],
-                x=[0.02, 0.02, 0.98, 0.98],
+                x=[0.035, 0.035, 0.965, 0.965],
                 y=[0.18, 0.78, 0.18, 0.78],
             ),
             link=dict(
@@ -802,11 +822,36 @@ def plot_confusion_sankey(snapshot: dict, display: str = "Counts") -> go.Figure:
             ),
         )
     )
+    annotation_specs = [
+        (0.045, 0.82, "left", BLUE),
+        (0.045, 0.22, "left", RED),
+        (0.955, 0.82, "right", NAVY),
+        (0.955, 0.22, "right", GREEN),
+    ]
+    for title, count, (x, y, xanchor, border_color) in zip(
+        node_titles, node_counts, annotation_specs
+    ):
+        fig.add_annotation(
+            x=x,
+            y=y,
+            xref="paper",
+            yref="paper",
+            xanchor=xanchor,
+            yanchor="middle",
+            text=annotation_text(title, count),
+            showarrow=False,
+            align="left" if xanchor == "left" else "right",
+            bgcolor="rgba(255,255,255,.96)",
+            bordercolor=border_color,
+            borderwidth=2,
+            borderpad=7,
+            font=dict(family="Segoe UI, sans-serif", size=15, color="#172033"),
+        )
     fig.update_layout(
-        height=430,
+        height=460,
         template="plotly_white",
-        margin=dict(l=16, r=16, t=30, b=16),
-        font=dict(family="Segoe UI, sans-serif", size=12),
+        margin=dict(l=20, r=20, t=24, b=18),
+        font=dict(family="Segoe UI, sans-serif", size=14, color="#172033"),
         transition=TRANSITION,
     )
     return fig
@@ -817,7 +862,7 @@ def plot_threshold_tradeoff_2d(
 ) -> go.Figure:
     """Readable primary view of the Precision/Recall/F1 threshold trade-off."""
     fig = go.Figure()
-    for metric, color in [("precision", BLUE), ("recall", RED), ("f1", GREEN)]:
+    for metric, color in [("precision", BLUE), ("recall", AMBER), ("f1", GREEN)]:
         fig.add_scatter(
             x=sweep["threshold"],
             y=sweep[metric] * 100,
@@ -897,7 +942,7 @@ def plot_threshold_tradeoff_3d(
             name="Selected threshold",
             text=[f"Selected {selected_threshold:.2f}"],
             textposition="top center",
-            marker=dict(size=10, color=RED, line=dict(color="white", width=2)),
+            marker=dict(size=10, color=NAVY, line=dict(color="white", width=2)),
             hovertemplate=(
                 "Selected threshold %{x:.2f}<br>Precision %{y:.1f}%"
                 "<br>Recall %{z:.1f}%<extra></extra>"

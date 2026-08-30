@@ -78,7 +78,7 @@ def train_random_forest(X_train_sm, y_train_sm, tune: bool = True) -> RandomFore
 def train_xgboost(X_train_sm, y_train_sm, tune: bool = True) -> XGBClassifier:
     """Report Section 4.2 — XGBoost with regularising GridSearchCV."""
     if not tune:
-        return XGBClassifier(max_depth=4, learning_rate=0.1, n_estimators=150, min_child_weight=10,
+        return XGBClassifier(max_depth=4, learning_rate=0.1, n_estimators=150, min_child_weight=5,
                               subsample=0.8, colsample_bytree=0.8, reg_lambda=1,
                               random_state=42, eval_metric="logloss").fit(X_train_sm, y_train_sm)
     param_grid = {
