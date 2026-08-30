@@ -80,6 +80,13 @@ def kfold_cv_all_models(X_train_scaled, y_train, model_builders: dict, n_splits:
         cv_res = cross_validate(pipe, X_train_scaled, y_train, cv=skf, scoring=scoring, n_jobs=-1)
         rows[name] = {f"{s}_mean": cv_res[f"test_{s}"].mean() for s in scoring}
         rows[name].update({f"{s}_std": cv_res[f"test_{s}"].std() for s in scoring})
+        # Retain the already-computed validation score from each fold so the
+        # presentation can show the distribution rather than only mean ± SD.
+        for score_name in scoring:
+            rows[name].update({
+                f"{score_name}_fold_{fold_no}": float(score)
+                for fold_no, score in enumerate(cv_res[f"test_{score_name}"], start=1)
+            })
     return pd.DataFrame(rows).T
 
 
