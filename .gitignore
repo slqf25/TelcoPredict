@@ -1,17 +1,15 @@
-# Python
+
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
 
-# Trained model artifacts — streamlit/*.pkl are intentionally committed (see
-# streamlit/train_model.py) so teammates don't need to retrain locally. Any
-# other .pkl elsewhere stays ignored.
+
 *.pkl
 !streamlit/*.pkl
 
-# Scratch reference material (spec/rubric PDF screenshots, extracted text) —
-# not part of the deliverable, strip before packaging the submission ZIP.
 tmp/
+
+.claude/
 
 # OS
 .DS_Store
