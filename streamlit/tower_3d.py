@@ -6,6 +6,8 @@ from collections.abc import Mapping
 
 import streamlit as st
 
+TOWER_UI_VERSION = 3
+
 
 _HTML = """
 <div class="telco3d" aria-label="Interactive 3D telecom tower customer profile">
@@ -29,7 +31,11 @@ _CSS = """
 .pod-button {
   position:absolute; z-index:6; min-width:124px; min-height:48px; transform:translate(-50%,-50%);
   padding:8px 9px; border:0; border-radius:0; cursor:pointer; color:var(--st-text-color);
-  background:transparent; box-shadow:none; text-shadow:0 1px 3px color-mix(in srgb,var(--st-background-color) 80%,transparent);
+  background:radial-gradient(ellipse at center,
+    color-mix(in srgb,var(--st-background-color) 70%,transparent) 0%,transparent 72%);
+  box-shadow:none;
+  text-shadow:0 0 3px var(--st-background-color),0 0 8px var(--st-background-color),
+    0 1px 3px color-mix(in srgb,var(--st-background-color) 88%,transparent);
   transition:opacity .2s, filter .2s, color .2s, text-shadow .2s;
 }
 .pod-button::before { content:""; position:absolute; top:50%; width:34px; height:1px;
@@ -51,8 +57,10 @@ _CSS = """
 .pod-button.is-active::after { background:var(--telco-amber-hot);
   box-shadow:0 0 5px var(--telco-amber-hot),0 0 15px var(--telco-amber); }
 .pod-icon { display:block; font-size:16px; margin-bottom:2px; }
-.pod-name { display:block; font-size:12.5px; line-height:1.15; font-weight:760; white-space:nowrap; }
-.pod-count { opacity:.68; font-size:10px; margin-left:5px; }
+.pod-name { display:block; font-size:13.5px; line-height:1.15; font-weight:760; white-space:nowrap; }
+.pod-count { opacity:.68; font-size:10.5px; margin-left:5px; }
+.telco3d.is-paused .pod-button { text-shadow:0 0 4px var(--st-background-color),
+  0 0 11px var(--st-background-color),0 1px 3px rgba(0,0,0,.18); }
 .profile-zone { position:absolute; z-index:9; top:24px; bottom:22px; width:29%; display:flex;
   flex-direction:column; justify-content:center; gap:15px; color:var(--st-text-color); pointer-events:none; }
 .zone-left { left:20px; } .zone-right { right:20px; }
@@ -90,6 +98,7 @@ _CSS = """
 .field-head { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; }
 .field-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12.5px; font-weight:700; }
 .field-value { font-size:11.5px; font-weight:760; color:color-mix(in srgb,var(--st-text-color) 68%,var(--telco-amber) 32%); white-space:nowrap; }
+.field-hint { margin-top:7px; font-size:10.5px; line-height:1.35; color:color-mix(in srgb,var(--st-text-color) 58%,transparent); }
 .option-row { display:flex; flex-wrap:wrap; gap:7px; }
 .option-button {
   position:relative; min-height:38px; flex:1 1 auto; border:1px solid color-mix(in srgb,var(--st-text-color) 14%,transparent);
@@ -189,7 +198,8 @@ export default async function(component) {
       {key:'in_dependents',label:'Dependents',options:['No','Yes']}]},
     Charges: {label:'Charges',icon:'▣',count:3,angle:-1.35,y:1.05,side:'left',fields:[
       {key:'in_monthly',label:'Monthly charges',type:'range',min:18,max:120,step:.5,suffix:'/mo'},
-      {key:'in_auto_total_mode',label:'Calculation mode',options:['Auto','Manual']},
+      {key:'in_auto_total_mode',label:'Total charges source',options:['Auto','Manual'],
+       displayOptions:{Auto:'Estimated',Manual:'Enter actual'}},
       {key:'in_total_manual',label:'Total Charges (USD)',type:'number',min:0,step:10}]},
     Contract: {label:'Contract',icon:'▤',count:2,angle:1.25,y:1.38,side:'right',fields:[
       {key:'in_tenure',label:'Tenure',type:'range',min:0,max:72,step:1,suffix:' months'},
@@ -314,6 +324,7 @@ export default async function(component) {
   ground.rotation.x=-Math.PI/2; ground.position.y=-2.12; ground.receiveShadow=true; scene.add(ground);
 
   function displayValue(field,value) {
+    if (field.displayOptions?.[value]) return field.displayOptions[value];
     if (field.key==='in_monthly') return `$${Number(value).toFixed(1)}${field.suffix}`;
     if (field.key==='in_total_manual') {
       const amount=profile.in_auto_total_mode==='Auto'
@@ -384,10 +395,17 @@ export default async function(component) {
       } else {
         const row=document.createElement('div'); row.className='option-row';
         field.options.forEach(option=>{ const button=document.createElement('button'); button.type='button'; button.className='option-button';
-          button.textContent=option; button.setAttribute('aria-pressed',String(option===profile[field.key]));
+          button.textContent=field.displayOptions?.[option] || option; button.setAttribute('aria-pressed',String(option===profile[field.key]));
           button.addEventListener('click',()=>{ profile[field.key]=option; value.textContent=`${displayValue(field,option)} ✓`;
             row.querySelectorAll('button').forEach(el=>el.setAttribute('aria-pressed',String(el===button))); commit(field.key,option); }); row.append(button); });
         chip.append(row);
+        if (field.key==='in_auto_total_mode') {
+          const hint=document.createElement('div'); hint.className='field-hint';
+          hint.textContent=profile.in_auto_total_mode==='Auto'
+            ? 'Estimated from tenure × monthly charges.'
+            : 'Enter the customer’s actual cumulative charges.';
+          chip.append(hint);
+        }
       }
       return chip;
   }
@@ -459,7 +477,7 @@ export default async function(component) {
       let delta=((targetRotation-tower.rotation.y+Math.PI)%(Math.PI*2))-Math.PI;
       tower.rotation.y += delta*Math.min(1,dt*4.2);
     } else if (!hovered && !window.matchMedia('(prefers-reduced-motion:reduce)').matches) {
-      tower.rotation.y += dt*.27;
+      tower.rotation.y += dt*.22;
     }
     root.dataset.towerRotation=String(tower.rotation.y);
     for (const [name,pod] of Object.entries(podObjects)) {
@@ -468,14 +486,25 @@ export default async function(component) {
       const target=pod.userData.base.clone().add(radial.multiplyScalar(amount)); pod.position.lerp(target,.12);
       const world=new THREE.Vector3(); pod.getWorldPosition(world); const projected=world.clone().project(camera);
       const podX=(projected.x*.5+.5)*root.clientWidth, y=(-projected.y*.5+.5)*root.clientHeight+(cfg.labelDy||0);
-      const side=(Math.abs(podX-root.clientWidth/2)>28 ? (podX<root.clientWidth/2?'left':'right') : cfg.side);
-      const x=podX+(side==='left'?-82:82);
+      // Keep each section on its semantic side so labels no longer jump across the
+      // mast during rotation. A centre guard prevents them entering the busiest
+      // part of the lattice while preserving their connection to the moving pod.
+      const side=cfg.side, centre=root.clientWidth/2;
+      const projectedLabelX=podX+(side==='left'?-86:86);
+      const x=side==='left' ? Math.min(projectedLabelX,centre-108)
+                            : Math.max(projectedLabelX,centre+108);
       cfg.button.classList.toggle('dock-left',side==='left'); cfg.button.classList.toggle('dock-right',side==='right');
       cfg.button.style.left=`${x}px`; cfg.button.style.top=`${y}px`;
-      const depth=Math.max(.72,Math.min(1,(1-projected.z)*2.6)); cfg.button.style.opacity=String(depth);
-      cfg.button.style.filter=`brightness(${.72+depth*.28})`;
-      if (active && !selected) cfg.button.style.opacity=String(depth*.68);
-      cfg.button.style.zIndex=String(Math.round(5+depth*3));
+      // Camera faces down -Z, therefore a larger world Z is closer to the viewer.
+      // During auto-rotation, rear labels deliberately recede; hovering restores
+      // every label to a stable, readable selection state.
+      const frontness=Math.max(0,Math.min(1,(world.z+1.65)/3.3));
+      let labelOpacity=hovered ? .96 : (.18+frontness*.76);
+      if (selected) labelOpacity=1;
+      else if (active) labelOpacity*=.48;
+      cfg.button.style.opacity=String(labelOpacity);
+      cfg.button.style.filter=`brightness(${hovered?1:(.72+frontness*.28)})`;
+      cfg.button.style.zIndex=String(Math.round(5+frontness*3));
     }
     const pulse=1+Math.sin(now*.005)*.35; beacon.material.emissiveIntensity=2.1*pulse;
     podActiveMat.emissiveIntensity=.68+pulse*.22;
@@ -488,7 +517,7 @@ export default async function(component) {
 
 
 _tower_component = st.components.v2.component(
-    "telco_tower_3d",
+    "telco_tower_3d_charges_copy_v3",
     html=_HTML,
     css=_CSS,
     js=_JS,

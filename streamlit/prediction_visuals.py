@@ -10,6 +10,7 @@ AMBER = "#E8A317"
 RED = "#C84B45"
 INK = "#27313D"
 MUTED = "#7B8491"
+PREDICTION_VISUALS_VERSION = 3
 
 
 def _risk_color(value: float) -> str:
@@ -17,7 +18,8 @@ def _risk_color(value: float) -> str:
 
 
 def hero_html(probability: float, risk_label: str, risk_color: str,
-              model_name: str, base_rate: float = 26.54) -> str:
+              model_name: str, base_rate: float = 26.54,
+              animation_token: int | str = "") -> str:
     """Border-light result hero; all values are display-only."""
     probability = max(0.0, min(100.0, float(probability)))
     signal_bars = max(0, min(5, round((100 - probability) / 20)))
@@ -25,9 +27,38 @@ def hero_html(probability: float, risk_label: str, risk_color: str,
         f'<i style="height:{7 + index * 5}px;opacity:{1 if index <= signal_bars else .16}"></i>'
         for index in range(1, 6)
     )
+    ribbon_specs = (
+        (7, 92, -86, 128, 42, -18, "#5F8F78"),
+        (8, 138, -58, 205, 74, 22, "#E8A317"),
+        (9, 184, -78, 252, 54, -36, "#D9E0E5"),
+        (6, 112, -42, 172, 106, 58, "#8EAAA0"),
+        (10, 218, -66, 292, 92, -8, "#F2C45C"),
+        (7, 154, -94, 224, 24, 34, "#EEF1F3"),
+        (8, 72, -54, 126, 82, -48, "#6E9C87"),
+        (9, 196, -38, 264, 118, 16, "#D8A43A"),
+        (93, -92, -86, -128, 42, 18, "#5F8F78"),
+        (92, -138, -58, -205, 74, -22, "#E8A317"),
+        (91, -184, -78, -252, 54, 36, "#D9E0E5"),
+        (94, -112, -42, -172, 106, -58, "#8EAAA0"),
+        (90, -218, -66, -292, 92, 8, "#F2C45C"),
+        (93, -154, -94, -224, 24, -34, "#EEF1F3"),
+        (92, -72, -54, -126, 82, 48, "#6E9C87"),
+        (91, -196, -38, -264, 118, -16, "#D8A43A"),
+    )
+    ribbons = ""
+    if risk_label == "LOW RISK":
+        pieces = "".join(
+            '<i style="--x:{}%;--x1:{}px;--y1:{}px;--x2:{}px;--y2:{}px;'
+            '--turn:{}deg;--ribbon:{};--delay:{}ms"></i>'.format(
+                x, x1, y1, x2, y2, turn, color, index * 18
+            )
+            for index, (x, x1, y1, x2, y2, turn, color) in enumerate(ribbon_specs)
+        )
+        ribbons = f'<div class="result-ribbons" aria-hidden="true">{pieces}</div>'
     return f"""
 <style>
   .prediction-hero {{
+    position:relative;
     display:grid; grid-template-columns:minmax(210px,.8fr) minmax(280px,1.2fr);
     align-items:center; gap:28px; padding:24px 12px 22px; margin:5px 0 2px;
     border-top:1px solid rgba(104,115,128,.20);
@@ -55,9 +86,23 @@ def hero_html(probability: float, risk_label: str, risk_color: str,
   .prediction-signal {{ height:34px; display:flex; align-items:flex-end; gap:4px; margin-top:13px; }}
   .prediction-signal i {{ display:block; width:7px; background:{risk_color};
     border-radius:2px 2px 0 0; }}
+  .result-ribbons {{ position:fixed; inset:0; z-index:999999; overflow:hidden; pointer-events:none; }}
+  .result-ribbons i {{
+    position:absolute; left:var(--x); top:47%; width:5px; height:17px; border-radius:2px;
+    background:var(--ribbon); opacity:0; transform-origin:center;
+    animation:result-ribbon-burst 1.35s cubic-bezier(.18,.72,.24,1) var(--delay) both;
+  }}
+  @keyframes result-ribbon-burst {{
+    0% {{ opacity:0; transform:translate(0,0) rotate(var(--turn)); }}
+    12% {{ opacity:1; }}
+    52% {{ opacity:.95; transform:translate(var(--x1),var(--y1)) rotate(calc(var(--turn) + 170deg)); }}
+    100% {{ opacity:0; transform:translate(var(--x2),var(--y2)) rotate(calc(var(--turn) + 360deg)); }}
+  }}
   @media(max-width:760px) {{ .prediction-hero {{ grid-template-columns:1fr; }} }}
+  @media(prefers-reduced-motion:reduce) {{ .result-ribbons {{ display:none; }} }}
 </style>
-<section class="prediction-hero" aria-label="Prediction result">
+<section class="prediction-hero" aria-label="Prediction result" data-animation="{escape(str(animation_token))}">
+  {ribbons}
   <div class="prediction-reading">
     <div class="prediction-orbit" aria-hidden="true"></div>
     <div><div class="prediction-kicker">{escape(risk_label)}</div>

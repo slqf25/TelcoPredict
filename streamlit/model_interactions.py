@@ -1,9 +1,6 @@
 """Interactive model-evaluation visuals used only by the Streamlit prototype.
 
-The functions in this module never fit or mutate a model.  They derive display
-values from an already-trained classifier's ``predict_proba`` output so the
-presentation can explore operating thresholds without changing the training
-pipeline or any persisted artefact.
+The functions in this module never fit or mutate a model.  They derive display values from an already-trained classifier's ``predict_proba`` output 
 """
 
 from __future__ import annotations
@@ -30,6 +27,7 @@ RED = "#C00000"
 GREEN = "#2E8B57"
 AMBER = "#E8A317"
 TRANSITION = dict(duration=350, easing="cubic-in-out")
+SANKEY_LABEL_CARDS_VERSION = 2
 MODEL_COLORS = {
     "Logistic Regression": "#2E75B6",
     "Decision Tree": "#E8A317",
@@ -411,47 +409,133 @@ def plot_cv_stability(
     metric: str,
     selected_model: str | None = None,
 ) -> go.Figure:
-    """Cross-validation mean with ±1 standard deviation and selected-model emphasis."""
+    """Show each validation-fold score together with its mean and ±1 SD interval."""
     ranked = cv_ranking_frame(cv_df, metric).sort_values("Mean", ascending=True)
     models = list(ranked.index)
-    means = ranked["Mean"].to_numpy(dtype=float) * 100
-    stds = ranked["Std"].to_numpy(dtype=float) * 100
-    colors = [MODEL_COLORS.get(name, BLUE) for name in models]
-    fig = go.Figure(
-        go.Bar(
-            x=means,
-            y=models,
-            orientation="h",
-            marker=dict(
-                color=colors,
-                opacity=[1.0 if name == selected_model else 0.70 for name in models],
-                line=dict(
-                    color=[NAVY if name == selected_model else "rgba(0,0,0,0)" for name in models],
-                    width=[3 if name == selected_model else 0 for name in models],
-                ),
-            ),
-            error_x=dict(type="data", array=stds, visible=True, color="#4D4D4D", thickness=1.5),
-            customdata=stds,
-            text=[f"{mean:.1f}% ± {std:.1f}" for mean, std in zip(means, stds)],
-            textposition="outside",
-            cliponaxis=False,
-            hovertemplate=(
-                "%{y}<br>Mean " + metric + ": %{x:.2f}%"
-                "<br>Fold SD: %{customdata:.2f} pp<extra></extra>"
-            ),
+    mean_col, _ = cv_metric_columns(metric)
+    metric_key = mean_col.removesuffix("_mean")
+    fold_cols = sorted(
+        [column for column in cv_df.columns if column.startswith(f"{metric_key}_fold_")],
+        key=lambda column: int(column.rsplit("_", 1)[1]),
+    )
+
+    fig = go.Figure()
+    all_values: list[float] = []
+    leader = ranked["Mean"].idxmax()
+    fig.add_trace(
+        go.Scatter(
+            x=[None],
+            y=[None],
+            mode="lines",
+            line=dict(color="#64748B", width=6),
+            name="±1 SD interval",
+            legendrank=3,
+            hoverinfo="skip",
         )
     )
-    max_endpoint = float(np.max(means + stds)) if len(means) else 1.0
+
+    for model_name in models:
+        mean = float(ranked.loc[model_name, "Mean"]) * 100
+        std = float(ranked.loc[model_name, "Std"]) * 100
+        folds = cv_df.loc[model_name, fold_cols].to_numpy(dtype=float) * 100
+        color = MODEL_COLORS.get(model_name, BLUE)
+        is_active = model_name == selected_model
+        all_values.extend(folds.tolist())
+        all_values.extend([mean - std, mean + std])
+
+        # The interval sits behind the observations and communicates variation;
+        # it is intentionally not a bar starting at zero.
+        fig.add_trace(
+            go.Scatter(
+                x=[mean - std, mean + std],
+                y=[model_name, model_name],
+                mode="lines",
+                line=dict(color=color, width=7 if is_active else 5),
+                opacity=0.42 if not is_active else 0.62,
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=folds,
+                y=[model_name] * len(folds),
+                mode="markers",
+                marker=dict(
+                    symbol="circle",
+                    size=10 if is_active else 9,
+                    color=color,
+                    opacity=1.0 if is_active else 0.78,
+                    line=dict(color="#FFFFFF", width=1.5),
+                ),
+                customdata=np.arange(1, len(folds) + 1),
+                name="Fold score",
+                legendgroup="fold",
+                legendrank=1,
+                showlegend=model_name == models[0],
+                hovertemplate=(
+                    f"<b>{model_name}</b><br>Fold %{{customdata}} {metric}: "
+                    "%{x:.2f}%<extra></extra>"
+                ),
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=[mean],
+                y=[model_name],
+                mode="markers+text",
+                marker=dict(
+                    symbol="diamond",
+                    size=18 if is_active else 16,
+                    color=color,
+                    line=dict(color=NAVY if is_active else "#FFFFFF", width=3 if is_active else 2),
+                ),
+                text=[f"  {mean:.1f}% ± {std:.1f}"],
+                textposition="middle right",
+                textfont=dict(color="#4B5563", size=11),
+                customdata=[[std, "CV leader" if model_name == leader else ""]],
+                name="Mean",
+                legendgroup="mean",
+                legendrank=2,
+                showlegend=model_name == models[0],
+                hovertemplate=(
+                    f"<b>{model_name}</b><br>Mean {metric}: %{{x:.2f}}%"
+                    "<br>Fold SD: %{customdata[0]:.2f} pp"
+                    "<br>%{customdata[1]}<extra></extra>"
+                ),
+            )
+        )
+
+    if all_values:
+        x_min = max(0.0, min(all_values) - 2.0)
+        x_max = min(100.0, max(all_values) + 7.0)
+    else:
+        x_min, x_max = 0.0, 100.0
+
     fig.update_layout(
-        height=380,
+        height=400,
         template="plotly_white",
-        margin=dict(l=15, r=110, t=38, b=35),
+        margin=dict(l=15, r=30, t=62, b=45),
         font=dict(family="Segoe UI, sans-serif", size=12),
         transition=TRANSITION,
-        xaxis_title=f"5-fold mean {metric} (%) with ±1 SD",
-        xaxis=dict(range=[0, min(100, max_endpoint + 12)]),
+        xaxis_title=f"Validation-fold {metric} (%) · zoomed scale",
+        xaxis=dict(
+            range=[x_min, x_max],
+            ticksuffix="%",
+            showgrid=True,
+            gridcolor="rgba(31,78,121,0.10)",
+            zeroline=False,
+        ),
         yaxis_title=None,
-        showlegend=False,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.05,
+            xanchor="left",
+            x=0,
+            title=None,
+        ),
+        hovermode="closest",
     )
     return fig
 
@@ -906,9 +990,13 @@ def plot_threshold_tradeoff_2d(
 def plot_threshold_tradeoff_3d(
     sweep: pd.DataFrame, selected_threshold: float, model_name: str
 ) -> go.Figure:
-    """Optional presentation view: threshold/precision/recall space, coloured by F1."""
+    """Optional threshold path with default, F1-optimal and selected reference points."""
     selected_idx = int((sweep["threshold"] - selected_threshold).abs().idxmin())
     selected = sweep.loc[selected_idx]
+    default_idx = int((sweep["threshold"] - 0.50).abs().idxmin())
+    optimal_idx = int(sweep["f1"].idxmax())
+    default_point = sweep.loc[default_idx]
+    optimal_point = sweep.loc[optimal_idx]
     fig = go.Figure()
     fig.add_trace(
         go.Scatter3d(
@@ -916,7 +1004,8 @@ def plot_threshold_tradeoff_3d(
             y=sweep["precision"] * 100,
             z=sweep["recall"] * 100,
             mode="lines+markers",
-            name=model_name,
+            name=f"{model_name} threshold path",
+            showlegend=False,
             line=dict(color=NAVY, width=6),
             marker=dict(
                 size=4,
@@ -933,28 +1022,35 @@ def plot_threshold_tradeoff_3d(
             ),
         )
     )
-    fig.add_trace(
-        go.Scatter3d(
-            x=[selected["threshold"]],
-            y=[selected["precision"] * 100],
-            z=[selected["recall"] * 100],
-            mode="markers+text",
-            name="Selected threshold",
-            text=[f"Selected {selected_threshold:.2f}"],
-            textposition="top center",
-            marker=dict(size=10, color=NAVY, line=dict(color="white", width=2)),
-            hovertemplate=(
-                "Selected threshold %{x:.2f}<br>Precision %{y:.1f}%"
-                "<br>Recall %{z:.1f}%<extra></extra>"
-            ),
+
+    reference_points = [
+        ("Default 0.50", default_point, "diamond-open", "#64748B", 9),
+        ("Highest F1", optimal_point, "diamond", GREEN, 11),
+        ("Current selection", selected, "circle", RED, 10),
+    ]
+    for label, point, symbol, color, size in reference_points:
+        fig.add_trace(
+            go.Scatter3d(
+                x=[point["threshold"]],
+                y=[point["precision"] * 100],
+                z=[point["recall"] * 100],
+                mode="markers",
+                name=label,
+                marker=dict(size=size, symbol=symbol, color=color, line=dict(color="white", width=2)),
+                customdata=[[point["f1"] * 100]],
+                hovertemplate=(
+                    f"<b>{label}</b><br>Threshold %{{x:.2f}}<br>Precision %{{y:.1f}}%"
+                    "<br>Recall %{z:.1f}%<br>F1 %{customdata[0]:.1f}%<extra></extra>"
+                ),
+            )
         )
-    )
     fig.update_layout(
         height=570,
         template="plotly_white",
         margin=dict(l=0, r=0, t=35, b=0),
         font=dict(family="Segoe UI, sans-serif", size=11),
-        showlegend=False,
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0),
         scene=dict(
             xaxis_title="Threshold",
             yaxis_title="Precision (%)",

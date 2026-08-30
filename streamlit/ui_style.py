@@ -13,6 +13,7 @@ import streamlit as st
 # Report palette (Section colours) — shared with eda_plots.py / evaluation.py
 NAVY, BLUE, LIGHT, RED = "#1F4E79", "#2E75B6", "#9DC3E6", "#C00000"
 GREEN, AMBER = "#2E8B57", "#E8A317"
+MAIN_NAV_STYLE_VERSION = 2
 
 MODEL_ICON = {
     "Logistic Regression": "show_chart",
@@ -107,6 +108,76 @@ def inject_css():
   button[data-variant="segmented_control"]:focus-visible {{
       outline:3px solid color-mix(in srgb, {BLUE} 28%, transparent) !important;
       outline-offset:2px;
+  }}
+
+  /* Performance workspace: keep view and metric controls together as one
+     compact analysis toolbar instead of two disconnected form rows. */
+  div.st-key-performance_controls {{
+      background:color-mix(in srgb, var(--background-color) 70%, transparent);
+      border:1px solid color-mix(in srgb, {BLUE} 14%, transparent) !important;
+      border-radius:18px !important;
+      padding:12px 16px 10px !important;
+      margin:2px 0 14px;
+      box-shadow:0 5px 20px rgba(31,78,121,.04);
+  }}
+  div.st-key-performance_controls [data-testid="stWidgetLabel"] p {{
+      font-weight:650 !important;
+      color:color-mix(in srgb, var(--text-color) 78%, transparent) !important;
+  }}
+  .control-context {{
+      min-height:50px;
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      padding:3px 4px 5px;
+      color:color-mix(in srgb, var(--text-color) 68%, transparent);
+      font-size:.88rem;
+      line-height:1.35;
+  }}
+  @media (max-width: 720px) {{
+    div.st-key-performance_controls {{ padding:10px 12px 8px !important; }}
+  }}
+
+  /* Primary workspace navigation only. Keep analysis-level segmented controls
+     compact, while making Predict / Data Analysis / Models read as the app's
+     centred top-level navigation. */
+  div.st-key-main_workspace_view {{
+      display:flex !important;
+      justify-content:center !important;
+      width:100% !important;
+      margin:4px auto 24px !important;
+  }}
+  div.st-key-main_workspace_view [data-testid="stButtonGroup"] {{
+      display:flex !important;
+      justify-content:center !important;
+      width:100% !important;
+  }}
+  div.st-key-main_workspace_view [role="radiogroup"] {{
+      width:fit-content !important;
+      max-width:100% !important;
+      margin:0 auto !important;
+      border-radius:15px !important;
+      box-shadow:0 5px 18px rgba(31,78,121,.08);
+  }}
+  div.st-key-main_workspace_view button[data-variant="segmented_control"] {{
+      min-height:54px !important;
+      min-width:132px !important;
+      padding:0 30px !important;
+  }}
+  div.st-key-main_workspace_view button[data-variant="segmented_control"] p {{
+      font-size:1.06rem !important;
+      font-weight:650 !important;
+      line-height:1.15 !important;
+  }}
+  @media (max-width: 720px) {{
+    div.st-key-main_workspace_view button[data-variant="segmented_control"] {{
+      min-height:48px !important;
+      min-width:auto !important;
+      padding:0 16px !important;
+    }}
+    div.st-key-main_workspace_view button[data-variant="segmented_control"] p {{
+      font-size:.94rem !important;
+    }}
   }}
 
   /* Inputs (Squircles) */
