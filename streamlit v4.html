@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Bilingual operational and presentation guide for the Telco Customer Churn Streamlit prototype.">
+  <title>Telco Churn · Streamlit Guide</title>
+  <style>
+    :root { --navy:#14263f; --blue:#2f78bb; --green:#2d8d61; --amber:#e8a317;
+      --red:#c94b48; --ink:#253246; --muted:#6d7786; --paper:#f4f7fb;
+      --surface:#fff; --line:#dce4ee; --soft:#edf4fb; --sidebar:310px; }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; scroll-padding-top:82px; }
+    body { margin:0; background:var(--paper); color:var(--ink);
+      font:15.5px/1.65 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
+    .progress { position:fixed; z-index:60; inset:0 0 auto; height:4px; }
+    .progress span { display:block; width:0; height:100%; background:linear-gradient(90deg,var(--blue),var(--green)); }
+    header { position:fixed; z-index:50; inset:4px 0 auto; height:68px; display:flex;
+      align-items:center; gap:18px; padding:10px 22px; color:#fff; background:rgba(20,38,63,.97);
+      box-shadow:0 8px 28px rgba(20,38,63,.18); }
+    .brand { min-width:275px; } .brand strong { display:block; font-size:15px; }
+    .brand span { opacity:.7; font-size:12px; }
+    .search { flex:1; max-width:640px; }
+    .search input { width:100%; border:1px solid rgba(255,255,255,.2); border-radius:10px;
+      padding:10px 13px; color:white; background:rgba(255,255,255,.1); outline:none; }
+    .search input::placeholder { color:rgba(255,255,255,.62); }
+    .actions button { border:1px solid rgba(255,255,255,.24); border-radius:9px; padding:9px 12px;
+      color:white; background:transparent; cursor:pointer; }
+    aside { position:fixed; inset:72px auto 0 0; width:var(--sidebar); overflow:auto; padding:18px 15px 30px;
+      border-right:1px solid var(--line); background:#fff; }
+    aside .label { margin:2px 10px 12px; color:var(--muted); font-size:11px; font-weight:800;
+      letter-spacing:.12em; text-transform:uppercase; }
+    aside a { display:block; border-radius:9px; color:#465269; text-decoration:none; }
+    aside a:hover, aside a.active { color:#174f83; background:#e8f2fc; }
+    .nav-major { margin-top:9px; padding:9px 10px; font-weight:800; }
+    .nav-minor { padding:6px 10px 6px 21px; font-size:12.5px; }
+    main { margin-left:var(--sidebar); padding:98px 34px 70px; }
+    article { max-width:1180px; margin:auto; }
+    h1 { margin:0 0 8px; color:var(--navy); font-size:clamp(30px,4vw,48px); line-height:1.15; }
+    h1 + blockquote { margin-top:20px; }
+    h2 { margin:54px 0 22px; padding:22px 25px; border-radius:18px; color:#fff;
+      background:linear-gradient(120deg,var(--navy),#285b85); box-shadow:0 14px 38px rgba(20,38,63,.13); }
+    h3 { margin:30px 0 12px; padding:17px 20px; border:1px solid var(--line); border-left:5px solid var(--blue);
+      border-radius:13px; color:var(--navy); background:var(--surface); box-shadow:0 6px 20px rgba(20,38,63,.05); }
+    h4 { margin:23px 0 8px; color:#234e76; font-size:16px; }
+    p, ul, ol { margin:9px 4px 14px; } li { margin:5px 0; }
+    strong { color:#172b46; } code { padding:.13em .4em; border-radius:6px; color:#a12d40; background:#f8edf1; }
+    pre { overflow:auto; margin:16px 0; padding:18px; border-radius:13px; color:#e9f2ff; background:#17283f; }
+    pre code { padding:0; color:inherit; background:none; }
+    blockquote { margin:16px 0; padding:16px 19px; border:1px solid #cfe0ef; border-left:5px solid var(--green);
+      border-radius:12px; color:#31475e; background:#edf7f3; }
+    hr { margin:38px 0; border:0; border-top:1px solid var(--line); }
+    .table-wrap { overflow:auto; margin:15px 0 22px; border:1px solid var(--line); border-radius:13px; background:#fff; }
+    table { width:100%; border-collapse:collapse; min-width:620px; }
+    th,td { padding:11px 13px; border-bottom:1px solid #e7edf4; text-align:left; vertical-align:top; }
+    th { position:sticky; top:0; color:#173b5f; background:#edf4fb; font-size:13px; }
+    tr:last-child td { border-bottom:0; } tbody tr:nth-child(even) { background:#fafcff; }
+    mark { border-radius:3px; padding:0 2px; background:#ffe69a; }
+    .empty { display:none; margin:20px 0; padding:14px; border-radius:10px; background:#fff3cd; }
+    @media(max-width:900px) { aside { display:none; } main { margin-left:0; padding:92px 18px 50px; }
+      .brand { min-width:190px; } .brand span { display:none; } }
+    @media(max-width:620px) { header { padding:9px 12px; } .actions { display:none; } h2 { padding:18px; } }
+    @media print { header,aside,.progress { display:none; } main { margin:0; padding:0; }
+      h2 { break-before:page; color:var(--navy); background:#e9f1f8; box-shadow:none; }
+      h3,.table-wrap,blockquote { break-inside:avoid; box-shadow:none; } }
+  </style>
+</head>
+<body>
+  <div class="progress"><span></span></div>
+  <header>
+    <div class="brand"><strong>Telco Churn · Streamlit Guide</strong><span>System operation, graph reading and defence</span></div>
+    <div class="search"><input id="search" type="search" placeholder="Search / 搜索：K-fold, threshold, VIF, Recall…"></div>
+    <div class="actions"><button onclick="window.print()">Print / PDF</button></div>
+  </header>
+  <aside><div class="label">Contents / 目录</div><a class="nav-major" href="#1-predict-workspace-客户预测页面">1. Predict Workspace / 客户预测页面</a><a class="nav-minor" href="#1-1-从客户资料到预测结果-from-customer-profile-to-prediction">1.1 从客户资料到预测结果 / From customer profile to prediction</a><a class="nav-minor" href="#1-2-怎样解释-93-的-high-risk-结果-how-to-explain-the-93-result">1.2 怎样解释 93% 的 High Risk 结果 / How to explain the 93% result</a><a class="nav-minor" href="#1-3-predict-页面现场说法-predict-page-presentation-script">1.3 Predict 页面现场说法 / Predict-page presentation script</a><a class="nav-major" href="#2-data-analysis-workspace-数据与-feature-依据">2. Data Analysis Workspace / 数据与 Feature 依据</a><a class="nav-minor" href="#2-1-这个页面怎样支持系统-how-this-page-supports-the-system">2.1 这个页面怎样支持系统 / How this page supports the system</a><a class="nav-minor" href="#2-2-feature-decisions-与-vif-feature-decisions-and-vif">2.2 Feature decisions 与 VIF / Feature decisions and VIF</a><a class="nav-major" href="#3-models-workspace-模型比较与业务决策">3. Models Workspace / 模型比较与业务决策</a><a class="nav-minor" href="#3-1-performance-与实际-model-choice-performance-and-actual-model-choice">3.1 Performance 与实际 model choice / Performance and actual model choice</a><a class="nav-minor" href="#3-2-explainability-怎样联系-telco-signals-relating-explanations-to-telco-signals">3.2 Explainability 怎样联系 Telco signals / Relating explanations to telco signals</a><a class="nav-minor" href="#3-3-reliability-与-5-fold-validation-reliability-and-five-fold-validation">3.3 Reliability 与 5-fold validation / Reliability and five-fold validation</a><a class="nav-minor" href="#3-4-threshold-怎样改变-retention-operation-how-threshold-changes-operations">3.4 Threshold 怎样改变 retention operation / How threshold changes operations</a><a class="nav-minor" href="#3-5-models-页面现场说法-models-page-presentation-script">3.5 Models 页面现场说法 / Models-page presentation script</a></aside>
+  <main><article id="guide"><h1 id="streamlit-system-guide">Streamlit System Guide</h1>
+<p>这份指南按照实际展示系统的顺序编排：先预测一位客户，再说明数据依据，最后比较模型和业务取舍。组员不需要背下所有数字，但必须理解每个页面为什么存在，以及它怎样连接到我们的 Telco Churn project。 This guide follows the actual demonstration flow: predict one customer, show the supporting data evidence, then compare models and operational trade-offs. Team members do not need to memorise every number, but they should understand why each page exists and how it connects to our Telco Churn project.</p>
+<pre><code>Predict customer risk
+        ↓
+Understand the data and feature decisions
+        ↓
+Compare model performance and reliability
+        ↓
+Choose a threshold based on retention priorities</code></pre>
+<hr>
+<h2 id="1-predict-workspace-客户预测页面">1. Predict Workspace / 客户预测页面</h2>
+<h3 id="1-1-从客户资料到预测结果-from-customer-profile-to-prediction">1.1 从客户资料到预测结果 / From customer profile to prediction</h3>
+<p>Predict 页面解决一个实际问题：<strong>如果公司现在收到一位客户的资料，系统怎样判断他是否值得优先进行 retention follow-up？</strong> The Predict workspace answers one operational question: <strong>Given a current customer profile, should this customer be prioritised for retention follow-up?</strong></p>
+<p>页面顶部先选择 active model。这里的 Logistic Regression、Decision Tree、Random Forest 和 XGBoost 是四种不同的 <strong>预测方法</strong>。系统默认使用 Random Forest；点击另一个 model 后，同一位客户会交给另一个 fitted model 计算。顶部五个数值是该模型在全部 1,409 位 test customers 上的表现，不是当前客户的结果；五个数值的意思会在 Models 页面解释。</p>
+<p>The four active-model buttons select four different <strong>prediction methods</strong>. The top five numbers evaluate the selected model across the complete test set; they are not five additional models and do not describe the current customer.</p>
+<h4 id="为什么系统提供三个-demo-presets-why-do-we-provide-three-presets">为什么系统提供三个 Demo Presets？ / Why do we provide three presets?</h4>
+<p>Presets 的目的不是为了让页面看起来方便，而是用三个有明确用途的 profiles 快速检查系统行为：明显高风险、明显低风险和普通参考案例。</p>
+<p>The presets provide three purposeful system checks: a clearly high-risk profile, a clearly low-risk profile and a typical reference profile.</p>
+<div class="table-wrap"><table><thead><tr>
+<th>Preset</th>
+<th>为什么建立这个组合 / Why this profile exists</th>
+<th>展示时预期看到什么 / Expected demonstration</th>
+</tr></thead><tbody>
+<tr><td><strong>Highest-risk segment</strong></td><td>把 EDA 中较高 churn 的真实 patterns 放在一起：0–12 month tenure churn 47.4%、month-to-month 42.7%、electronic check 45.3%、fiber optic 41.9%，再配合高 monthly charge 和没有 security/support add-ons。它用于检查模型是否会把明显危险组合放到优先名单。 / Combines observed higher-risk patterns to test whether the model responds strongly.</td><td>应得到明显高于 26.5% base rate 的结果；截图中 RF 给出 93.0%。 / A score clearly above the base rate; RF returns 93.0% here.</td></tr>
+<tr><td><strong>Lowest-risk segment</strong></td><td>使用数据中较稳定的 patterns：long tenure、two-year contract、automatic payment、partner/dependents 和多项 services。它用于检查系统是否并非把所有客户都预测成 high risk。 / Uses more stable patterns as a sanity check that the system does not flag everyone.</td><td>应明显低于 high-risk preset。 / A substantially lower score than the high-risk profile.</td></tr>
+<tr><td><strong>Dataset average</strong></td><td>使用接近常见类别和平均 tenure/monthly charge 的输入。它不是“平均人的真实记录”，而是 high 与 low 之间的参考点。 / Provides a typical reference profile rather than an actual average person.</td><td>通常位于两种极端案例之间，帮助说明模型不是只有 high/low 两种输出。 / Usually falls between the two extremes.</td></tr>
+</tbody></table></div>
+<p>这些 presets 是根据 dataset patterns 人工组合的 demonstration profiles，不是数据集中三位真实客户，也不保证是数学上绝对最高或最低的 possible prediction。</p>
+<p>These are constructed demonstration profiles, not exact customer records or guaranteed mathematical extremes.</p>
+<p>客户资料在画面上分成六组：Demographics、Charges、Contract、Billing、Core Services 和 Add-ons。中间的 3D tower 只是把这些 inputs 组织成 telecom-themed interface；它本身不计算 risk。</p>
+<p>The profile is organised into six user-facing groups. The 3D tower is only a telecom-themed input interface; it does not calculate risk.</p>
+<p>系统真正执行的是：</p>
+<pre><code>Six input groups
+→ check service consistency
+→ engineer two extra features
+→ one-hot encode categories
+→ scale four numeric columns
+→ align the same 23 columns used in training
+→ selected_model.predict_proba()</code></pre>
+<p>六组 UI inputs 最后成为 <strong>23 个 model predictors</strong>。两个不是由用户直接输入的 engineered features 是：</p>
+<ul>
+<li><code>ContractRiskScore</code>：Month-to-month = 2、One year = 1、Two year = 0。它把 contract commitment 的顺序变成模型可用的数值，不代表数值 2 的客户一定 churn。</li>
+<li><code>ChargesToTenureRatio = MonthlyCharges / (tenure + 1)</code>：比较 monthly charge 与客户资历。<code>+1</code> 避免 tenure 为 0 时除以 0。</li>
+</ul>
+<p>The interface also creates <code>ContractRiskScore</code> and <code>ChargesToTenureRatio</code>. These are model inputs learned from historical patterns, not causal rules.</p>
+<p>数值 predictors 中的 tenure、MonthlyCharges、TotalCharges 和 ChargesToTenureRatio 会使用训练时保存的 StandardScaler。Scaling 只是把不同单位转换到模型熟悉的尺度，特别帮助 Logistic Regression optimisation；不会凭空改变客户风险。</p>
+<p>The four numeric predictors are transformed using the scaler fitted during training. Scaling changes representation, not the customer&#x27;s underlying information.</p>
+<p>系统还会处理不一致输入：如果 Internet Service = No，internet add-ons 会按照训练数据中的 no-internet representation 送入模型；如果 Phone Service = No，Multiple Lines 会按 no-phone representation 处理。Total Charges 的 Auto mode 使用 <code>tenure × monthly charge</code> 估算，因此有真实 billing history 时应使用真实累计费用。</p>
+<p>The system applies training-consistent service representations. Auto Total Charges is only an estimate and should be replaced with actual billing history when available.</p>
+<p>展开 <code>Preview how this profile becomes model input</code> 可以直接查看 UI selections 怎样变成 23 columns。DSL 和 Bank transfer (automatic) 是 one-hot reference categories；没有独立 column 不代表它们被忽略，而是当同组其他 dummy columns 都为 0 时代表 reference category。</p>
+<p>The preview is the clearest evidence of how human-readable inputs become model inputs. Reference categories are represented by the absence of the other dummy indicators.</p>
+<h3 id="1-2-怎样解释-93-的-high-risk-结果-how-to-explain-the-93-result">1.2 怎样解释 93% 的 High Risk 结果 / How to explain the 93% result</h3>
+<p>截图使用 Highest-risk preset：2 months tenure、month-to-month、fiber optic、electronic check、monthly charge $95，而且没有 internet add-ons。Random Forest 输出 <strong>93.0% churn probability</strong>。</p>
+<p>For this high-risk preset, Random Forest estimates a <strong>93.0% churn probability</strong>.</p>
+<h4 id="先看结果第一排-read-the-result-row-first">先看结果第一排 / Read the result row first</h4>
+<div class="table-wrap"><table><thead><tr>
+<th>画面内容 / Display</th>
+<th>它到底是什么 / What it actually is</th>
+<th>结合当前结果怎样说 / How to interpret this result</th>
+</tr></thead><tbody>
+<tr><td><strong>HIGH RISK · 93.0%</strong></td><td>Random Forest 对当前这组 23 predictors 输出的 churn probability。它不是模型 Accuracy。 / RF probability for this profile, not model Accuracy.</td><td>模型认为这位客户比一般客户危险很多，应优先 review；但 93% 不是保证他一定 churn。 / Prioritise the customer, but do not treat the estimate as certainty.</td></tr>
+<tr><td><strong>Random Forest</strong></td><td>告诉我们 93% 是由哪个 active model 算出来的。 / Identifies the model that produced 93%.</td><td>如果切换成 LR、DT 或 XGB，同一 profile 会得到另一个 probability。</td></tr>
+<tr><td><strong>Dataset base rate 26.5%</strong></td><td>Dataset 中 7,043 位客户有 1,869 位 churn：<code>1,869 ÷ 7,043 = 26.5%</code>。它回答“在还没看这位客户资料前，历史数据中一般客户有多常 churn？” / Historical background churn frequency before considering this profile.</td><td>93.0% 明显高于一般背景的 26.5%，所以这个 profile 不是普通风险。26.5% 不是 threshold，也不是这位客户的第二个预测。</td></tr>
+<tr><td><strong>+66.5 pp vs base rate</strong></td><td><code>93.0% − 26.5% = 66.5 percentage points</code>。<code>pp</code> 是 percentage points，不是 66.5% increase。</td><td>当前 prediction 比历史平均风险高 66.5 个百分点。</td></tr>
+<tr><td><strong>0/5 retention signal</strong></td><td>UI 把 churn probability 反向压缩成五格视觉提示；risk 越高，retention bars 越少。它不是模型训练出来的新 metric。 / A simplified inverse visual, not another metric.</td><td>93% churn risk 很高，所以只剩 0/5；展示时不需要用它进行 model comparison。</td></tr>
+</tbody></table></div>
+<p>一句完整说法：</p>
+<blockquote>Random Forest estimates 93.0% churn risk for this profile. The historical dataset base rate is 26.5%, meaning 1,869 of 7,043 customers churned. This customer&#x27;s estimate is therefore 66.5 percentage points above the background rate and should be prioritised, although it is not a guaranteed outcome.</blockquote>
+<h4 id="再看横向-risk-graph-then-read-the-horizontal-risk-graph">再看横向 risk graph / Then read the horizontal risk graph</h4>
+<div class="table-wrap"><table><thead><tr>
+<th>Graph element</th>
+<th>怎样看 / How to read it</th>
+</tr></thead><tbody>
+<tr><td>Green 0–40</td><td>UI 标为 Stable / Low Risk。</td></tr>
+<tr><td>Amber 40–70</td><td>UI 标为 At Risk / Medium Risk。</td></tr>
+<tr><td>Red 70–100</td><td>UI 标为 Critical / High Risk。</td></tr>
+<tr><td>Grey mark at 26.5</td><td>Dataset base rate 的位置。</td></tr>
+<tr><td>Diamond at 93.0</td><td>当前客户的 prediction；越靠右代表 predicted churn risk 越高。</td></tr>
+</tbody></table></div>
+<p>40% 与 70% 是人为选择的 <strong>display bands</strong>，不是 GridSearch 找到的参数，也不是业务验证后的最佳 decision threshold。Models 页的 0.50 slider 才是在研究 probability 怎样转成 Yes/No decision。</p>
+<p>The 40% and 70% boundaries organise the display; they are not learned or validated operational thresholds.</p>
+<h4 id="51-4-evidence-box-怎样和-93-一起读">51.4% evidence box 怎样和 93% 一起读？</h4>
+<p>51.4% 是历史数据中“0–12 months + month-to-month”这一群客户的实际 churn rate，只使用两个条件；93% 是 Random Forest 使用当前客户全部 23 predictors 的个人预测。Current profile 还有 fiber optic、electronic check、high charge 和 no add-ons 等 signals，所以两个数值不需要相同。</p>
+<p>The 51.4% value is a two-variable group rate; 93% is a full-profile model estimate. They answer different questions.</p>
+<h4 id="model-wide-important-features-graph-怎样看">Model-wide important features graph 怎样看？</h4>
+<p>这张图回答：<strong>Random Forest 在所有客户上作判断时，整体最常依赖哪些 business information？</strong> 它不是专门拆解当前 93% 的 local explanation。</p>
+<div class="table-wrap"><table><thead><tr>
+<th>Graph element</th>
+<th>当前画面 / Current screen</th>
+<th>正确解释 / Correct interpretation</th>
+</tr></thead><tbody>
+<tr><td>Bar position</td><td>从左到右列出 top six business-level features。</td><td>只显示最重要的六组，避免 23 columns 全部挤在 Predict 页面。</td></tr>
+<tr><td>Bar height</td><td>Charges/tenure 17.5%、Contract 14.6%、Tenure 10.3%、Monthly charges 9.8%、Internet 9.3%、Payment 9.0%。</td><td>百分比是 RF global split importance 重新归一化后的相对份额；越高表示整个 forest 越依赖它。</td></tr>
+<tr><td>Orange bars</td><td>排名前两位。</td><td>只是视觉强调，不代表它们一定把当前客户 risk 往上推。</td></tr>
+<tr><td>Customer value below bar</td><td>例如 2 months、Month-to-month、$95、Fiber optic、Electronic check。</td><td>帮我们把全局重要 feature 联系到当前 profile；不是该 feature 对 93% 的贡献值。</td></tr>
+</tbody></table></div>
+<p>与当前案例的联系是：RF 平常最依赖的几组 information，恰好都是这个 high-risk profile 的核心资料；而 EDA 也显示 short tenure、month-to-month、fiber optic 和 electronic check 有较高 observed churn。因此 93% 有合理的 data context。<strong>但这张 importance graph 本身不能告诉我们每一项增加了多少 risk，也不能证明 causation。</strong></p>
+<p>The chart shows that the current profile contains values from feature groups the forest relies on heavily, but it does not quantify local contributions or causal effects.</p>
+<p>图中的 <code>Monthly charge / (tenure + 1)</code> 现在直接使用与模型相同的公式。对于当前客户，它显示 <code>95 ÷ (2 + 1) = 31.67 model value</code>，因此图表 label、preview 和实际 prediction input 保持一致。</p>
+<h4 id="model-consensus-graph-怎样看">Model consensus graph 怎样看？</h4>
+<p>这张图回答：<strong>如果同一位客户交给四个模型，它们是否得出相似判断？</strong></p>
+<div class="table-wrap"><table><thead><tr>
+<th>Graph element</th>
+<th>怎样看 / How to read it</th>
+</tr></thead><tbody>
+<tr><td>Four rows</td><td>四个 active models，不是四个 metrics。</td></tr>
+<tr><td>Dot position</td><td>每个模型对同一 profile 输出的 churn probability；越右越高。</td></tr>
+<tr><td>Star</td><td>当前选择的 Random Forest。</td></tr>
+<tr><td>Background colours</td><td>与上方相同的 Low、Medium、High display bands。</td></tr>
+<tr><td>6.9 percentage-point spread</td><td>最高 LR 99.9% 减最低 RF 93.0%，表示四个 predictions 相差 6.9 pp。</td></tr>
+</tbody></table></div>
+<p>当前四个结果是 LR 99.9%、DT 94.6%、RF 93.0%、XGB 97.4%，全部落在 High Risk band。正确结论是：<strong>虽然算法不同，四个模型都认为这个 profile 应优先关注，而且分歧只有 6.9 pp。</strong> 但它们使用相同 dataset 和 features，所以 agreement 不是客户一定 churn 的证明。</p>
+<p>All four algorithms agree on the broad high-risk decision; consensus shows consistency, not guaranteed correctness.</p>
+<h3 id="1-3-predict-页面现场说法-predict-page-presentation-script">1.3 Predict 页面现场说法 / Predict-page presentation script</h3>
+<p>建议用约一分钟完成：</p>
+<ol>
+<li>选择 Random Forest：<code>Random Forest is our default because it gives the best overall F1 and AUC balance.</code></li>
+<li>点击 Highest-risk segment，指出 short tenure、month-to-month、fiber optic、electronic check、high charge 和 no add-ons。</li>
+<li>说明：<code>The tower only organises the inputs. The system converts the profile into the same 23 predictors used during training.</code></li>
+<li>点击 Predict：<code>The model estimates 93% churn risk. This is a probability estimate, not certainty.</code></li>
+<li>指出 base rate 与 51.4% segment evidence 的区别。</li>
+<li>结束时说：<code>Global importance shows model reliance, while consensus shows whether the four models broadly agree.</code></li>
+</ol>
+<div class="table-wrap"><table><thead><tr>
+<th>Question</th>
+<th>Short answer</th>
+</tr></thead><tbody>
+<tr><td>Why is 93% different from 51.4%?</td><td>51.4% uses only tenure band and contract; 93% uses all 23 predictors.</td></tr>
+<tr><td>Does 93% mean certain churn?</td><td>No. It is a probability estimate used for prioritisation.</td></tr>
+<tr><td>Why use 40% and 70%?</td><td>They are simple UI risk bands, not trained or validated operational thresholds.</td></tr>
+<tr><td>Does the 3D tower affect prediction?</td><td>No. It is only the input interface.</td></tr>
+<tr><td>Are important features explaining this customer?</td><td>No. They are global model importance, not local contribution.</td></tr>
+<tr><td>Do all four models agreeing prove the result?</td><td>No. They share the same data and may share errors.</td></tr>
+</tbody></table></div>
+<hr>
+<h2 id="2-data-analysis-workspace-数据与-feature-依据">2. Data Analysis Workspace / 数据与 Feature 依据</h2>
+<h3 id="2-1-这个页面怎样支持系统-how-this-page-supports-the-system">2.1 这个页面怎样支持系统 / How this page supports the system</h3>
+<p>老师不会重点检查 EDA，所以现场不需要逐张讲图。这个 workspace 的作用是证明：<strong>Predict 页面使用的 inputs 和 Models 页面的结论不是凭空选择，而是经过清理、统计检查和 feature audit。</strong></p>
+<p>Detailed EDA is not the presentation focus. This workspace exists to make the preprocessing and feature decisions traceable.</p>
+<div class="table-wrap"><table><thead><tr>
+<th>System fact</th>
+<th>Why it matters</th>
+</tr></thead><tbody>
+<tr><td>7,043 customers；1,869 churned，5,174 retained</td><td>Churn 只有 26.5%，所以是 minority class，不能只看 Accuracy。</td></tr>
+<tr><td>21 raw columns → 23 model predictors</td><td>Categories 被编码，两个 engineered features 被保留。</td></tr>
+<tr><td>5,634 train；1,409 test</td><td>80/20 stratified split 保持相近 class proportion。</td></tr>
+<tr><td>11 blank TotalCharges values</td><td>转成 numeric 后才被发现并处理；没有删除这 11 位客户。</td></tr>
+<tr><td>Scaling 与 SMOTE 只使用 training observations</td><td>保护 held-out test set，避免 test information 进入 training。</td></tr>
+</tbody></table></div>
+<p>主要 observed patterns 是 month-to-month churn 42.7%、first-year churn 47.4%、electronic-check churn 45.3%，都高于 26.5% baseline；fiber optic customers 为 41.9%。这些 patterns 帮助模型找到 priority segments，但都是 <strong>association，不是 causation</strong>。</p>
+<p>The main observed high-risk patterns are month-to-month contracts, first-year tenure, electronic checks and fibre optic service. They support prioritisation but do not prove causal effects.</p>
+<p>Heatmap 只需知道：每格是某个 customer combination 的 churn rate 和 sample size。颜色深表示 observed churn 较高，但小样本格不能过度解释。例如 month-to-month + manual payment 是 46.5%，而 two-year customers 的 manual 与 automatic payment 几乎相同；这表示 payment pattern 会随 contract context 改变，却不能证明强制转 autopay 会减少 churn。</p>
+<p>Heatmaps expose conditional patterns. Any proposed intervention still requires a controlled test.</p>
+<h3 id="2-2-feature-decisions-与-vif-feature-decisions-and-vif">2.2 Feature decisions 与 VIF / Feature decisions and VIF</h3>
+<p>八个 candidate engineered features 中，最终只把两个送入模型：</p>
+<div class="table-wrap"><table><thead><tr>
+<th>Kept feature</th>
+<th>为什么保留 / Why kept</th>
+</tr></thead><tbody>
+<tr><td>ContractRiskScore</td><td>用 2、1、0 表示 contract commitment，并替代 raw Contract，避免同时保留重复 representation。</td></tr>
+<tr><td>ChargesToTenureRatio</td><td>捕捉 monthly charge 相对于 tenure 的关系，在分析中与 churn 有较强 association。</td></tr>
+</tbody></table></div>
+<p>其他 engineered features 没进入模型不是因为它们“完全没用”，而是因为与现有 predictors 重复或只适合 EDA：TenureGroup 重复 continuous tenure；TotalServicesSubscribed 是 service flags 的总和；IsAutoPay 与 PaymentMethod 重叠；AvgChargePerMonth 接近 MonthlyCharges；HasInternetService 会隐藏 Fiber/DSL 差别；HasPartnerOrDependents 会损失两个原始 fields 的细节。</p>
+<p>The other engineered features were excluded mainly because they duplicated existing information or were more useful for EDA than modelling.</p>
+<p>如果老师问“当前 23 个 predictors 中哪个可以进一步 remove”，第一候选是 <strong>gender</strong>：它的 Cramer&#x27;s V 只有 0.008，而且 p-value 0.487，没有明显单变量 churn association。PhoneService 也很弱，但会牵涉 service encoding semantics，所以 gender 是更干净的第一项 ablation candidate。</p>
+<p>Among the current predictors, <strong>gender</strong> is the first removal candidate because it shows almost no univariate association. The proper decision still requires an ablation test: remove it, retrain all models, and compare held-out F1, Recall, AUC and stability.</p>
+<p>VIF 检查的不是 feature 与 churn 的关系，而是某个 predictor 能否被其他 predictors 大量推测出来。当前 Streamlit 对完整 encoded matrix 的计算显示 MonthlyCharges VIF = <strong>866.1</strong>，并有 7 个 predictors 高于 10。这表示 charge、internet 和 service variables 有严重 information overlap。</p>
+<p>VIF measures overlap among predictors, not predictive relationship with churn. The current result indicates severe overlap among charge and service variables.</p>
+<p>866.1 不代表与 churn 有 866 倍关系，也不代表 Accuracy 下降 866%。当前函数没有为 VIF matrix 加 intercept，因此 exact magnitude 对 encoding 很敏感；应该重视“非常高”的结论，而不是赋予 866.1 商业意义。</p>
+<p>The exact VIF magnitude is representation-sensitive. It should be treated as a multicollinearity warning, not a business effect size.</p>
+<p>为什么不直接删除 MonthlyCharges？因为它仍是 Random Forest 的重要 predictor。高 VIF 最直接影响 Logistic Regression coefficients 的独立解释；tree models 通常较能容忍 correlated predictors，但 importance 可能被相关 features 分摊。正确做法是 ablation testing，不是根据一个 VIF 自动删除。</p>
+<p>High VIF mainly limits independent coefficient interpretation. Any removal should be validated by retraining and comparing model performance.</p>
+<p>这一页现场只需一句话：</p>
+<blockquote>The Data Analysis workspace documents how 7,043 customer records became 23 audited predictors. It supports our feature choices, but observed associations and importance values are not treated as causal evidence.</blockquote>
+<hr>
+<h2 id="3-models-workspace-模型比较与业务决策">3. Models Workspace / 模型比较与业务决策</h2>
+<h3 id="3-1-performance-与实际-model-choice-performance-and-actual-model-choice">3.1 Performance 与实际 model choice / Performance and actual model choice</h3>
+<p>先分清楚三种东西，否则 Model tab 会看起来像有九个 models：</p>
+<div class="table-wrap"><table><thead><tr>
+<th>名称 / Name</th>
+<th>它是什么 / What it is</th>
+<th>我们系统里的例子 / Example in our system</th>
+</tr></thead><tbody>
+<tr><td><strong>Model</strong></td><td>学习历史数据并对客户输出 probability 的方法。 / A method that learns patterns and produces probabilities.</td><td>Logistic Regression、Decision Tree、Random Forest、XGBoost——一共四个。</td></tr>
+<tr><td><strong>Metric</strong></td><td>用来评价 model predictions 的“尺”，本身不会做预测。 / A ruler used to score predictions; it does not predict customers.</td><td>Accuracy、Precision、Recall、F1、AUC——一共五个。</td></tr>
+<tr><td><strong>Evaluation method</strong></td><td>决定在哪里、怎样用 metrics 检查模型。 / The procedure used to evaluate models.</td><td>1,409-customer held-out test set、5-fold cross-validation。</td></tr>
+</tbody></table></div>
+<p>系统关系是：</p>
+<pre><code>Customer predictors
+→ one of four MODELS
+→ churn probability
+→ threshold converts probability to Yes/No
+→ compare Yes/No with actual outcome
+→ calculate five METRICS</code></pre>
+<p>以下用 Random Forest 在 threshold 0.50 的真实结果说明五个 metrics。Test set 有 1,409 位客户：TN 795、FP 240、FN 101、TP 273。老师要求的 summary 应该包含 <strong>数字代表的客户、对 retention operation 的意义，以及这个 metric 没告诉我们的东西</strong>。</p>
+<div class="table-wrap"><table><thead><tr>
+<th>Metric</th>
+<th>当前数字与客户人数 / Number and customers</th>
+<th>与 Telco churn 的实际关系 / Telco interpretation</th>
+<th>Presentation summary — 不要只念数字</th>
+</tr></thead><tbody>
+<tr><td><strong>Accuracy 75.8%</strong></td><td><code>(795 TN + 273 TP) ÷ 1,409</code>，即 1,409 位客户中有 1,068 位整体分类正确。</td><td>它同时计算正确 retained 和正确 churn，但 retained 占 73.5%，所以多数 class 会让 Accuracy 看起来容易偏高。Dummy model 全猜 retained 已有 73.5% Accuracy，却找不到任何 churner。</td><td><strong>“Random Forest classifies 75.8% of test customers correctly, but this is only 2.3 percentage points above the all-retained baseline. Therefore, Accuracy alone is not enough for our churn problem.”</strong></td></tr>
+<tr><td><strong>Precision 53.2%</strong></td><td>系统标记 513 位 churn risks，其中 273 位真的 churn、240 位最终 retained：<code>273 ÷ 513</code>。</td><td>如果 retention team 联络这 513 位客户，约 53% 是真正 churners，约 47% 是 false alerts。Precision 越高，有限的电话、折扣和人工资源浪费越少。</td><td><strong>“Among customers flagged for retention action, 53.2% actually churned. This controls campaign workload, although 240 retained customers would still receive unnecessary alerts.”</strong></td></tr>
+<tr><td><strong>Recall 73.0%</strong></td><td>实际有 374 位 churners，模型找到 273 位，漏掉 101 位：<code>273 ÷ 374</code>。</td><td>Recall 直接代表系统保护了多少潜在流失客户。73% 表示大部分被发现，但仍有 27% 的 churners 没进入 contact list。若漏掉客户代价最高，应优先提高 Recall。</td><td><strong>“The model catches 273 of 374 actual churners, giving 73.0% Recall, but it still misses 101 customers who may leave without intervention.”</strong></td></tr>
+<tr><td><strong>F1 61.6%</strong></td><td>将 Precision 53.2% 与 Recall 73.0% 合成一个 balance score；其中一个很低时，F1 也会被拉低。</td><td>Telco retention 同时不希望漏掉太多 churners，也不希望 contact list 塞满 false alerts，所以我们用 F1 作为主要 model-selection metric。RF 的 F1 是四个模型最高，但只领先约 0.7–0.9 pp，优势存在但不巨大。</td><td><strong>“Random Forest has the highest F1 at 61.6%, meaning it gives our best tested balance between catching churners and limiting false alerts, although the four models are close.”</strong></td></tr>
+<tr><td><strong>AUC 0.839</strong></td><td>使用所有 possible thresholds 检查 ranking，不直接使用某一个 TN/FP/FN/TP matrix。</td><td>它衡量 model 是否通常把真正 churners 排在 retained customers 前面，适合先建立 risk-priority list，再由公司决定 contact threshold。0.839 不是 83.9% Accuracy，也不是客户会 churn 的 probability。</td><td><strong>“An AUC of 0.839 shows that Random Forest separates higher-risk churners from retained customers well across thresholds, which supports customer prioritisation rather than one fixed contact rule.”</strong></td></tr>
+</tbody></table></div>
+<p><strong>五个 metrics 合起来的完整结论 / Combined metric summary</strong></p>
+<blockquote>Random Forest is not selected simply because its Accuracy is 75.8%. It catches 73.0% of actual churners, while 53.2% of its alerts are correct. Its F1 of 61.6% is the best balance among our four models, and its AUC of 0.839 gives the strongest overall risk ranking. However, it still misses 101 churners and creates 240 false alerts, so the final threshold must reflect the company&#x27;s retention capacity and the cost of missed customers.</blockquote>
+<p><strong>Model Ranking bar graph 怎样看 / How to read the ranking graph</strong></p>
+<div class="table-wrap"><table><thead><tr>
+<th>Screen element</th>
+<th>Reading rule</th>
+</tr></thead><tbody>
+<tr><td>Accuracy / Precision / Recall / F1 / AUC buttons</td><td>选择用哪一把 metric ruler 排名，不是在选择 model。</td></tr>
+<tr><td>One horizontal bar per model</td><td>每条 bar 是一个 active model 的 test score。</td></tr>
+<tr><td>Longer bar</td><td>在当前 selected metric 上表现较高。</td></tr>
+<tr><td>Star and dark outline</td><td>标记顶部选择的 active model，例如 RF；不代表它必定是第一名。</td></tr>
+<tr><td>Leader and “#1 of 4” cards</td><td>左边显示当前 metric 第一名，右边显示 active model 的位置。</td></tr>
+</tbody></table></div>
+<p>选择 F1 时 RF 61.6% 排第一；切到 Recall 后 DT 77.0% 排第一。Graph 改变不是模型突然变好或变坏，而是我们改用了另一把评价尺。</p>
+<p>When the selected metric changes, the bars are reordered because the business question has changed—not because any model was retrained.</p>
+<div class="table-wrap"><table><thead><tr>
+<th>Model</th>
+<th>Accuracy</th>
+<th>Precision</th>
+<th>Recall</th>
+<th>F1</th>
+<th>AUC</th>
+<th>我们怎样理解 / Project interpretation</th>
+</tr></thead><tbody>
+<tr><td>Logistic Regression</td><td>75.2%</td><td>52.4%</td><td>71.9%</td><td>60.7%</td><td>0.833</td><td>简单 baseline，表现接近复杂模型。</td></tr>
+<tr><td>Decision Tree</td><td>73.7%</td><td>50.3%</td><td><strong>77.0%</strong></td><td>60.9%</td><td>0.823</td><td>Recall 第一，找出最多 churners，但 false alerts 最多。</td></tr>
+<tr><td>Random Forest</td><td><strong>75.8%</strong></td><td><strong>53.2%</strong></td><td>73.0%</td><td><strong>61.6%</strong></td><td><strong>0.839</strong></td><td>Precision、F1、AUC 第一，作为 default。</td></tr>
+<tr><td>XGBoost</td><td>75.3%</td><td>52.5%</td><td>72.2%</td><td>60.8%</td><td>0.830</td><td>强 benchmark，但没有超过 RF。</td></tr>
+</tbody></table></div>
+<p>Precision 高适合 retention team capacity 有限；Recall 高适合漏掉 churner 的成本特别高；F1 平衡两边，所以是我们的主要 selection metric。</p>
+<p>当老师在 bar graph 上要求 “summarise this metric” 时，应比较四个 models 并说明业务后果：</p>
+<div class="table-wrap"><table><thead><tr>
+<th>Selected graph</th>
+<th>应该怎样 summary / What to say</th>
+</tr></thead><tbody>
+<tr><td><strong>Accuracy</strong></td><td>RF 75.8% 第一，但只比 73.5% dummy baseline 高 2.3 pp；因此整体正确率必须配合 churn-specific metrics。 / RF leads, but Accuracy alone is weak evidence under class imbalance.</td></tr>
+<tr><td><strong>Precision</strong></td><td>RF 53.2% 第一，表示它的 contact list 比其他 models 稍微集中于真正 churners；但仍有 240 false alerts，campaign efficiency 仍有限。</td></tr>
+<tr><td><strong>Recall</strong></td><td>DT 77.0% 第一，比 RF 多找 15 位 churners；代价是多 44 个 false alerts。因此 DT 适合最怕漏客户的情境，不一定适合 capacity-limited team。</td></tr>
+<tr><td><strong>F1</strong></td><td>RF 61.6% 第一，但四个 models 只相差约 0.9 pp；RF 是 best tested balance，不是压倒性胜出。</td></tr>
+<tr><td><strong>AUC</strong></td><td>RF 0.839 第一，四个 models 都在 0.823–0.839，说明它们的 ranking ability 都不错，RF 只有小幅领先。</td></tr>
+</tbody></table></div>
+<p>This is the difference between <strong>presenting a number</strong> and <strong>summarising a metric</strong>: state the leader, compare the gap, translate it into customers or workload, and mention the trade-off.</p>
+<p><strong>ROC &amp; PR Curves 怎样看 / How to read the two curve graphs</strong></p>
+<div class="table-wrap"><table><thead><tr>
+<th>Graph</th>
+<th>Axis and good direction</th>
+<th>我们的结果 / Our result</th>
+</tr></thead><tbody>
+<tr><td><strong>ROC curve</strong></td><td>X = False Positive Rate，Y = Recall；curve 越靠左上越好，灰色 diagonal 是 chance。 / Closer to top-left is better.</td><td>RF green line 的 AUC 0.839 最高，表示整体 discrimination 最好。</td></tr>
+<tr><td><strong>Precision–Recall curve</strong></td><td>X = Recall，Y = Precision；越靠右上越好。灰色 0.265 是 dataset churn prevalence，也是 no-skill reference。</td><td>Average Precision：LR 0.650、RF 0.648、XGB 0.644、DT 0.600。</td></tr>
+</tbody></table></div>
+<p>LR 的 AP 只比 RF 高 0.002，但 RF 同时领先 F1、Precision、ROC-AUC 和整体 error balance，所以我们没有只根据一张 PR graph 更换 default model。</p>
+<div class="table-wrap"><table><thead><tr>
+<th>Model</th>
+<th>TN</th>
+<th>FP</th>
+<th>FN</th>
+<th>TP</th>
+<th>与 Random Forest 的差别 / Difference from RF</th>
+</tr></thead><tbody>
+<tr><td>Logistic Regression</td><td>791</td><td>244</td><td>105</td><td>269</td><td>多 4 个 FP，多漏 4 位 churners。</td></tr>
+<tr><td>Decision Tree</td><td>751</td><td>284</td><td><strong>86</strong></td><td><strong>288</strong></td><td>多找出 15 位 churners，但多 44 个 false alerts。</td></tr>
+<tr><td>Random Forest</td><td><strong>795</strong></td><td><strong>240</strong></td><td>101</td><td>273</td><td>False alerts 最少，F1 balance 最好。</td></tr>
+<tr><td>XGBoost</td><td>791</td><td>244</td><td>104</td><td>270</td><td>Error pattern 与 LR 很接近。</td></tr>
+</tbody></table></div>
+<p>若漏掉客户的成本远高于多打一通电话，可以选 Decision Tree；若 retention team 资源有限，Random Forest 更适合作为 default prioritisation model。没有一个模型在所有 business situations 都绝对最好。</p>
+<p>There is no universally best model. The preferred model depends on the cost of missed churners versus unnecessary contacts.</p>
+<h3 id="3-2-explainability-怎样联系-telco-signals-relating-explanations-to-telco-signals">3.2 Explainability 怎样联系 Telco signals / Relating explanations to telco signals</h3>
+<p>Explainability tab 回答：<strong>模型在判断 Telco customer risk 时，整体最依赖哪些客户资料？</strong> 它不是另一种 performance test，也不会告诉我们某个 feature 一定导致 churn。</p>
+<p>The tab shows which Telco signals the fitted models rely on globally; it does not test Accuracy or prove causation.</p>
+<p><strong>为什么特别比较 Random Forest 和 XGBoost？ / Why compare these two?</strong></p>
+<ol>
+<li>Random Forest 是我们的最终推荐模型；XGBoost 是表现非常接近的另一种 advanced ensemble candidate。比较它们可以检查：RF 的结论是否只属于自己，还是另一种复杂模型也看到相似的 churn signals。</li>
+<li>两者虽然都使用 many trees，但学习方式不同。如果它们仍把 contract、charge/tenure、internet 和 payment 放在前面，说明这些 signals 在不同 modelling approaches 下重复出现。</li>
+<li>它们都能用同一种 horizontal importance bar 来表达 global reliance。Logistic Regression 要看有正负方向的 coefficients，Decision Tree 更适合看具体 rules；强行放进同一张 bar graph 会混合不同意思的数值。</li>
+</ol>
+<p>Random Forest is the selected model and XGBoost is the closest alternative tree ensemble. Comparing them checks whether important Telco signals remain similar under a different modelling approach. LR and DT are not ignored; they require different explanation formats in Active Model Explanation.</p>
+<p>老师问时可以简单回答：</p>
+<blockquote>We compare Random Forest with XGBoost because Random Forest is our recommended model and XGBoost is another strong ensemble candidate that learns patterns differently. If both models highlight similar Telco features, the drivers are less likely to be unique to one algorithm. Logistic Regression and Decision Tree are still available, but they are explained using coefficients and decision rules instead of the same importance graph.</blockquote>
+<p><strong>Ensemble Comparison graph 从上到下怎样看</strong></p>
+<div class="table-wrap"><table><thead><tr>
+<th>画面 / Display</th>
+<th>它告诉我们什么关于 Telco churn / What it tells us</th>
+</tr></thead><tbody>
+<tr><td>RF leader: ChargesToTenureRatio 0.175</td><td>RF 最依赖“monthly charge 相对于 tenure”的信息。它特别关注费用与客户资历是否不匹配，例如资历很短但费用很高的 profile。</td></tr>
+<tr><td>XGB leader: ContractRiskScore 0.262</td><td>XGB 最依赖 contract commitment；month-to-month、one-year、two-year 的差别是它首先关注的 churn signal。</td></tr>
+<tr><td>Green vs purple bars</td><td>同一行比较两个 models 对同一 feature 的 reliance。Bar 较长只代表该 model 更依赖它，不代表 probability 增加同样数值。</td></tr>
+<tr><td>8 of 10 shared drivers</td><td>两个 top-10 中有八个相同 features，说明 contract、charges、internet、payment 和 support signals 不是只在一个 model 出现。</td></tr>
+</tbody></table></div>
+<p>当前 graph 的主题结论是：</p>
+<ul>
+<li>RF 把注意力较平均地分散在 ChargesToTenureRatio、ContractRiskScore、tenure、MonthlyCharges 和 TotalCharges，说明它综合 customer lifecycle 与 charges。</li>
+<li>XGB 更集中在 ContractRiskScore、Fiber optic、Electronic check 和 InternetService_No，说明它更依赖 contract、internet type 与 payment pattern。</li>
+<li>两者都重视多个相同 Telco signals，但优先顺序不同。这就是 graph 真正要展示的 model difference。</li>
+</ul>
+<p>The comparison shows shared Telco drivers but different priorities: RF is broader across lifecycle and charges, while XGB is more concentrated on contract and service type.</p>
+<p><strong>Active Model Explanation graph 怎样看</strong></p>
+<p>选择 RF 时，每条绿色 bar 是一个 feature；越长表示 RF 在所有 customers 上越依赖它。<code>ChargesToTenureRatio = 0.175</code> 是全局第一，不代表它令某一位客户的 churn probability 增加 17.5%。切换 active model 后：</p>
+<div class="table-wrap"><table><thead><tr>
+<th>Active model</th>
+<th>页面为什么用这种解释 / Why this explanation fits</th>
+</tr></thead><tbody>
+<tr><td>Logistic Regression</td><td>显示 coefficients 和 odds ratios，因为它的重点是每个 feature 的 fitted direction；但高 VIF 令独立 coefficient interpretation 不稳定。</td></tr>
+<tr><td>Decision Tree</td><td>显示 importance，并可展开 top decision rules，因为单棵树可以沿着判断路径阅读。</td></tr>
+<tr><td>Random Forest</td><td>显示 many trees 合起来的 global importance，没有一条简单的单一 rule path。</td></tr>
+<tr><td>XGBoost</td><td>显示逐步建立的 trees 最后形成的 global importance。</td></tr>
+</tbody></table></div>
+<p>无论哪一种解释，都只说明 model reliance，不是当前 93% prediction 的 local breakdown，也不是因果关系。</p>
+<h3 id="3-3-reliability-与-5-fold-validation-reliability-and-five-fold-validation">3.3 Reliability 与 5-fold validation / Reliability and five-fold validation</h3>
+<p>Reliability tab 回答：<strong>我们现在看到的 model performance，是稳定的 Telco pattern，还是刚好遇到一组比较容易的 customers？</strong></p>
+<p><strong>Train–Test Context graph 告诉什么</strong></p>
+<p>每一行是一个 model，圆点是它对 training customers 的 F1，diamond 是它对 1,409 unseen test customers 的 F1；中间 line 越长，代表从熟悉数据到新客户下降越多。</p>
+<p>Random Forest 从 train F1 0.883 降到 test F1 0.616，gap 0.268，是最长的 line。这告诉我们 RF 在训练资料上学得很强，但面对真实比例的新客户时表现明显下降，所以必须警惕 generalisation，而不能只展示 training score。</p>
+<p>不过 train F1 使用 SMOTE-balanced data，test F1 使用 natural churn proportion，两边不是完全相同条件。因此不能简单说“0.268 全部都是 overfitting”。最终仍以 unseen test F1 和 cross-validation 为主要证据；RF 虽然 gap 最大，test F1 仍是四个模型最高。</p>
+<p>The graph warns that RF&#x27;s training performance does not fully carry over to unseen customers, but the gap is not a pure overfitting penalty because the train and test class distributions differ.</p>
+<p><strong>5-fold graph 为什么对我们的 Telco system 有用</strong></p>
+<p>我们只有一份 historical customer dataset。如果只 split 一次，可能刚好把较容易或较困难的 customers 放进 validation。5-fold 的做法是把 5,634 training customers 分成五组，轮流让不同一组做 validation。它要回答：<strong>换一组 Telco customers 后，model ranking 和 score 是否仍然相近？</strong></p>
+<p>Five-fold validation checks whether the conclusion remains similar when different subsets of Telco customers are used for validation.</p>
+<div class="table-wrap"><table><thead><tr>
+<th>画面上的东西 / Display</th>
+<th>简单意思 / Plain meaning</th>
+<th>对本 project 告诉什么 / What it tells us</th>
+</tr></thead><tbody>
+<tr><td>Five small circles</td><td>同一个 model 面对五组不同 validation customers 的五个 scores。</td><td>点很分散表示 performance 较依赖抽到哪批 customers；点集中表示较稳定。</td></tr>
+<tr><td>Diamond / Active CV mean</td><td>五次 scores 的平均。</td><td>比单一 split 更能代表 model 在不同 customer samples 上的典型表现。</td></tr>
+<tr><td>Horizontal ±1 SD line</td><td>五次结果通常相差多大；越短表示 variation 越少。</td><td>反映 deployment 到不同 customer batches 时，performance 可能有多稳定。</td></tr>
+<tr><td>Mean metric leader</td><td>当前 selected metric 的最高平均 model。</td><td>检查 RF 的 test-set优势是否也在 repeated validation 中出现。</td></tr>
+</tbody></table></div>
+<p>在 F1 view 中：</p>
+<div class="table-wrap"><table><thead><tr>
+<th>Model</th>
+<th>Five-fold result</th>
+<th>对 Telco system 的解释 / Interpretation</th>
+</tr></thead><tbody>
+<tr><td>Random Forest</td><td><strong>62.8% ± 2.8 pp</strong></td><td>平均 F1 最高，支持它作为 default；但 variation 最大，说明不同 customer groups 会影响它的 balance。</td></tr>
+<tr><td>XGBoost</td><td>62.3% ± 1.6 pp</td><td>平均只比 RF 低 0.5 pp，而且更稳定，是很接近的 alternative。</td></tr>
+<tr><td>Logistic Regression</td><td>62.2% ± 2.0 pp</td><td>简单 baseline 仍接近 ensembles，说明复杂模型的 improvement 不大。</td></tr>
+<tr><td>Decision Tree</td><td>61.1% ± 1.6 pp</td><td>Variation 较小，但平均 F1 最低；稳定不等于最好。</td></tr>
+</tbody></table></div>
+<p>正确 summary 不是只说 “RF CV F1 is 62.8%”，而是：</p>
+<blockquote>Random Forest has the highest five-fold mean F1 at 62.8%, supporting its overall selection across different Telco customer subsets. However, its 2.8 percentage-point standard deviation is the largest, so its performance varies more between customer groups than XGBoost or Decision Tree.</blockquote>
+<p>Accuracy view 同样用相同方式读：RF 77.4% ± 1.4、XGB 77.0% ± 0.8、LR 76.6% ± 0.8、DT 74.0% ± 1.7。其他 Precision、Recall 和 AUC buttons 不是新的 tests，只是用另一把 metric ruler 重新计算同样五组 predictions。</p>
+<p><strong>为什么使用 5，而不是 10、2 或 0？</strong></p>
+<ul>
+<li>5-fold：每次用约 80% training customers 学习、20% validation，能够重复检查五组客户，同时四个 models 和 fold-level SMOTE 的运行时间合理。</li>
+<li>10-fold：可以使用更多 data training，但需要大约两倍 model fits；不是错误，只是本 project 没有必要增加这部分计算。</li>
+<li>2-fold：每次只用一半 customers training，而且只有两个 validation scores，结论更容易受 split 影响。</li>
+<li>0-fold：没有 validation group，无法进行 cross-validation。</li>
+</ul>
+<p>每个 fold 都尽量保持相近 churn proportion；SMOTE 只在该 fold 的 training customers 内执行。CV mean 与 held-out test score 不同是正常的，因为 CV 在 training portion 内轮流验证，held-out test 是最后一次独立 evaluation。</p>
+<h3 id="3-4-threshold-怎样改变-retention-operation-how-threshold-changes-operations">3.4 Threshold 怎样改变 retention operation / How threshold changes operations</h3>
+<p>Threshold tab 回答：<strong>模型已经给出 probability 后，公司要从哪里开始把客户放进 contact list？</strong> 模型输出 probability，threshold 决定最终 class：</p>
+<pre><code>probability ≥ threshold  → predicted churn
+probability &lt; threshold  → predicted retained</code></pre>
+<p>移动 slider 不会 retrain model，也不会改变原始 probability；它只改变哪些客户会被放进 retention contact list。</p>
+<p>Changing the threshold changes the contact decision, not the fitted model.</p>
+<p>Threshold 降低时，更多客户被标记，通常 Recall 上升、FN 减少，但 FP 增加、Precision 下降；threshold 提高时则相反。因此 threshold 应根据公司对 missed churner 与 unnecessary contact 的实际成本决定。</p>
+<p>Lower thresholds catch more churners but usually create more false alerts. Higher thresholds are more selective but miss more churners.</p>
+<p>Slider 下方三张 cards 会即时显示当前 threshold 的 Precision、Recall 和 F1；下一排显示 FN、FP 和 Customers flagged。绿色或红色 delta 是相对于默认 0.50 的变化。例如 threshold 仍是 0.50 时，所有 delta 都是 0。</p>
+<p>The cards translate the selected threshold into model quality and actual retention workload.</p>
+<p><strong>Confusion Matrix graph 怎样看 / How to read the matrix</strong></p>
+<ul>
+<li>Rows 是实际结果：上面 Actual Retained，下面 Actual Churn。</li>
+<li>Columns 是模型决定：左边 Predicted Retained，右边 Predicted Churn。</li>
+<li>Blue TN 与 green TP 是正确决定；amber FP 与 red FN 是两种错误。</li>
+<li><code>Customers</code> 显示人数；<code>Rate within actual class</code> 把每一 actual row 转成百分比。</li>
+</ul>
+<div class="table-wrap"><table><thead><tr>
+<th>Outcome</th>
+<th>Count</th>
+<th>在 Telco operation 中的意思 / Operational meaning</th>
+</tr></thead><tbody>
+<tr><td>TN</td><td>795</td><td>正确没有把 retained customer 放入 contact list。</td></tr>
+<tr><td>FP</td><td>240</td><td>对最终 retained 的客户发出 unnecessary alert。</td></tr>
+<tr><td>FN</td><td>101</td><td>漏掉实际 churner。</td></tr>
+<tr><td>TP</td><td>273</td><td>成功找出实际 churner。</td></tr>
+</tbody></table></div>
+<p>因此 actual churners = <code>101 + 273 = 374</code>，Recall = <code>273 / 374 = 73.0%</code>；predicted churn = <code>240 + 273 = 513</code>，Precision = <code>273 / 513 = 53.2%</code>。</p>
+<p>The confusion matrix connects metrics to real customer counts, making the retention workload and missed opportunities visible.</p>
+<p><code>Prediction Flow</code> 不是另一份结果。左边是实际 1,035 retained 与 374 churn customers，右边是模型预测的 896 retained 与 513 churn；带子的宽度代表流向该结果的人数。它把相同 TN、FP、FN、TP 画成 Sankey view。Customers 显示人数；Share of test set 则除以 1,409，适合看整体比例。</p>
+<p>Prediction Flow is the same confusion information visualised as customer movement.</p>
+<p>Threshold curve 的 x-axis 是 threshold，y-axis 是 metric score。蓝线 Precision 通常随 threshold 上升，黄线 Recall 通常下降，绿线 F1 显示两者平衡；vertical line 标出 slider 当前位置。当前 test set 的 exploratory F1-optimal threshold 约为 0.54，但不能直接设为 production threshold，因为它是查看 test outcomes 后选出的；还需要 separate validation 和真实 contact/churn cost analysis。</p>
+<p>The 0.54 threshold is exploratory and should not be treated as production-ready without separate validation.</p>
+<p>3D threshold graph 只是把相同 threshold、Precision、Recall 和 F1 path 放进 3D view，不是额外证据。短 presentation 应优先展示 confusion matrix 和 2D threshold curve。</p>
+<p>The 3D view adds no new evaluation result and is optional during a short presentation.</p>
+<h3 id="3-5-models-页面现场说法-models-page-presentation-script">3.5 Models 页面现场说法 / Models-page presentation script</h3>
+<p>建议控制在两分钟：</p>
+<ol>
+<li>在 Performance 选择 F1：<code>Random Forest has the best F1 balance, while Decision Tree has the highest Recall.</code></li>
+<li>切换 Recall：<code>The leader changes because Recall rewards catching churners, even when false alerts increase.</code></li>
+<li>打开 ROC &amp; PR：<code>ROC measures overall ranking; PR focuses on the minority churn class.</code></li>
+<li>打开 Ensemble Comparison：<code>Random Forest spreads reliance across charge, lifecycle and contract signals, while XGBoost concentrates more on contract and internet type.</code></li>
+<li>打开 5-Fold F1：<code>The circles are fold scores, the diamond is the mean and the line is ±1 SD. We chose five folds as a stability–computation trade-off.</code></li>
+<li>打开 threshold 0.50 confusion matrix：<code>Random Forest catches 273 churners, misses 101 and produces 240 false alerts.</code></li>
+<li>用业务结论结束：<code>A lower threshold catches more churners but increases the contact workload, so the final threshold depends on retention cost and capacity.</code></li>
+</ol>
+<div class="table-wrap"><table><thead><tr>
+<th>Question</th>
+<th>Short answer</th>
+</tr></thead><tbody>
+<tr><td>Which metric is most important?</td><td>F1 is our main selection metric because it balances Precision and Recall on an imbalanced churn problem. We also inspect Recall, AUC and operational error counts.</td></tr>
+<tr><td>Why not select Decision Tree?</td><td>It catches 15 more churners than RF but creates 44 more false alerts. RF provides the better default balance.</td></tr>
+<tr><td>Why compare only Random Forest and XGBoost in Ensemble Comparison?</td><td>RF is our recommended model and XGB is a close alternative ensemble that learns differently. Comparing them checks whether important Telco signals are shared across two advanced approaches. LR coefficients and DT rules are shown separately because their explanation values mean something different.</td></tr>
+<tr><td>Why K = 5?</td><td>It gives five validation estimates while training on 80% of the training data each round, with reasonable computation for four models and fold-level SMOTE.</td></tr>
+<tr><td>Does low SD mean best model?</td><td>No. SD measures variation; mean performance and variation must be considered together.</td></tr>
+<tr><td>Why is CV F1 different from test F1?</td><td>CV averages five validations inside training data; test F1 is one final result on a separate held-out set.</td></tr>
+<tr><td>Does the train–test gap prove overfitting?</td><td>It is a warning, but the train and test F1 values use different class distributions, so it is not a pure overfitting score.</td></tr>
+<tr><td>What does changing threshold do?</td><td>It changes probability-to-class decisions and contact workload; it does not retrain the model.</td></tr>
+<tr><td>Why not use threshold 0.54 immediately?</td><td>It was found by exploring this test set and needs separate validation plus business-cost analysis.</td></tr>
+<tr><td>Does importance show causation?</td><td>No. It shows global model reliance in historical data.</td></tr>
+</tbody></table></div>
+<p>最后每位组员必须记住：</p>
+<ol>
+<li>93% 是单一客户的 estimated churn probability，不是 Accuracy，也不是 certainty。</li>
+<li>Random Forest 是 default，因为它在我们的 test data 上有最好的 F1、AUC 和 error balance。</li>
+<li>Decision Tree Recall 最高，但会制造更多 false alerts。</li>
+<li>Feature importance 是 global reliance，不是 local contribution 或 causation。</li>
+<li>K-fold 中 circles 是 fold scores、diamond 是 mean、横线是 ±1 SD。</li>
+<li>Threshold 越低，通常抓到更多 churners，但 contact workload 越大。</li>
+<li>Streamlit 的 selectors 与 sliders 不会重新训练模型。</li>
+</ol><div class="empty" id="empty">No matching content / 没有找到相关内容</div></article></main>
+  <script>
+    const progress=document.querySelector('.progress span');
+    const nav=[...document.querySelectorAll('aside a')];
+    const sections=[...document.querySelectorAll('h2[id],h3[id]')];
+    const search=document.getElementById('search');
+    const guide=document.getElementById('guide');
+    const source=guide.innerHTML;
+    addEventListener('scroll',()=>{
+      const max=document.documentElement.scrollHeight-innerHeight;
+      progress.style.width=(max?scrollY/max*100:0)+'%';
+      let current=sections[0]?.id;
+      for(const section of sections) if(section.getBoundingClientRect().top<120) current=section.id;
+      nav.forEach(a=>a.classList.toggle('active',a.hash==='#'+current));
+    },{passive:true});
+    search.addEventListener('input',()=>{
+      const q=search.value.trim();
+      guide.innerHTML=source;
+      if(!q){ document.getElementById('empty').style.display='none'; return; }
+      const walker=document.createTreeWalker(guide,NodeFilter.SHOW_TEXT);
+      const nodes=[]; while(walker.nextNode()) nodes.push(walker.currentNode);
+      let hits=0; const escaped=q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); const re=new RegExp(escaped,'ig');
+      for(const node of nodes){ if(['SCRIPT','STYLE','CODE'].includes(node.parentElement?.tagName)) continue;
+        const value=node.nodeValue; if(!re.test(value)) continue; re.lastIndex=0; hits++;
+        const span=document.createElement('span'); span.innerHTML=value.replace(re,m=>'<mark>'+m+'</mark>'); node.replaceWith(span); }
+      const empty=document.getElementById('empty'); empty.style.display=hits?'none':'block';
+      document.querySelector('mark')?.scrollIntoView({behavior:'smooth',block:'center'});
+    });
+  </script>
+</body>
+</html>

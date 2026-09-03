@@ -1,0 +1,16 @@
+
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+
+*.pkl
+!streamlit/*.pkl
+
+tmp/
+
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
