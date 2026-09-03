@@ -52,7 +52,7 @@ import prediction_visuals as pv  # Single-customer Predict result visuals
 
 
 if (not hasattr(pv, "importance_skyline") or
-        getattr(pv, "PREDICTION_VISUALS_VERSION", 0) < 3):
+        getattr(pv, "PREDICTION_VISUALS_VERSION", 0) < 4):
     pv = importlib.reload(pv)
 if getattr(miv, "SANKEY_LABEL_CARDS_VERSION", 0) < 2:
     miv = importlib.reload(miv)
@@ -122,8 +122,8 @@ def set_analysis_story_view(target):
 TEST_METRICS = {
     "Logistic Regression": dict(Accuracy=75.23, Precision=52.44, Recall=71.93, F1=60.65, AUC=0.833),
     "Decision Tree":       dict(Accuracy=73.74, Precision=50.35, Recall=77.01, F1=60.89, AUC=0.823),
-    "Random Forest":       dict(Accuracy=75.87, Precision=53.31, Recall=73.26, F1=61.71, AUC=0.839),
-    "XGBoost":             dict(Accuracy=75.23, Precision=52.40, Recall=72.99, F1=61.01, AUC=0.830),
+    "Random Forest":       dict(Accuracy=75.80, Precision=53.22, Recall=72.99, F1=61.56, AUC=0.839),
+    "XGBoost":             dict(Accuracy=75.30, Precision=52.53, Recall=72.19, F1=60.81, AUC=0.830),
 }
 MODEL_ROLE = {
     "Logistic Regression": "Linear baseline, interpretable.",
@@ -1991,7 +1991,9 @@ elif active_page == "Models":
             st.plotly_chart(
                 miv.plot_cv_stability(cv_df, cv_metric, selected_model=model_name),
                 width="stretch",
-                key="cv_stability_chart",
+                # Give each metric an independent Plotly component. Reusing one
+                # component can retain a stale animated axis during metric changes.
+                key=f"cv_stability_chart_{cv_metric}",
             )
             st.markdown(
                 f'<div class="finding green"><b>Cross-validation finding.</b> {cv_leader} has '
@@ -2273,7 +2275,7 @@ else:
     st.caption(
         "Four models trained on 23 predictors after a four-round multicollinearity audit "
         "(Section 3.3 of the report): Logistic Regression, Decision Tree, Random Forest, XGBoost. "
-        "Random Forest is the recommended default (Section 5.9) — test-set Accuracy 75.9%, "
-        "Precision 53.3%, Recall 73.3%, F1 61.7%, AUC 0.839. Data Analysis and Models pages run every "
+        "Random Forest is the recommended default (Section 5.9) — test-set Accuracy 75.8%, "
+        "Precision 53.2%, Recall 73.0%, F1 61.6%, AUC 0.839. Data Analysis and Models pages run every "
         "report analysis live against the src/ package — this is not a static screenshot."
     )

@@ -10,7 +10,7 @@ AMBER = "#E8A317"
 RED = "#C84B45"
 INK = "#27313D"
 MUTED = "#7B8491"
-PREDICTION_VISUALS_VERSION = 3
+PREDICTION_VISUALS_VERSION = 4
 
 
 def _risk_color(value: float) -> str:
@@ -269,7 +269,7 @@ _IMPORTANCE_GROUPS = (
     ("Monthly charges", ("MonthlyCharges",), "monthly_charges"),
     ("Total charges", ("TotalCharges",), "total_charges"),
     ("Contract type", ("ContractRiskScore",), "contract"),
-    ("Charges / tenure", ("ChargesToTenureRatio",), "charges_tenure"),
+    ("Monthly charge / (tenure + 1)", ("ChargesToTenureRatio",), "charges_tenure"),
     ("Internet service", ("InternetService_Fiber optic", "InternetService_No"),
      "internet_service"),
     ("Payment method", ("PaymentMethod_Credit card (automatic)",
@@ -290,8 +290,12 @@ def _customer_value(profile: dict, value_key: str) -> str:
     if value_key == "total_charges":
         return f"${float(value):,.2f}"
     if value_key == "charges_tenure":
-        tenure = max(float(profile.get("tenure", 0)), 1.0)
-        return f"${float(profile.get('total_charges', 0)) / tenure:,.1f}/mo"
+        # Keep the displayed customer value identical to the engineered predictor
+        # used by train_model.py and src/data_prep.py.  This is deliberately not
+        # TotalCharges / tenure: the deployed feature is MonthlyCharges / (tenure + 1).
+        tenure = float(profile.get("tenure", 0))
+        ratio = float(profile.get("monthly_charges", 0)) / (tenure + 1.0)
+        return f"{ratio:,.2f} model value"
     return str(value)
 
 

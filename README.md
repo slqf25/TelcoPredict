@@ -12,8 +12,8 @@ Full methodology, findings, and discussion are in theaccompanying project report
 |---|---|---|---|---|---|
 | Logistic Regression (Baseline) | 75.23% | 52.44% | 71.93% | 60.65% | 0.833 |
 | Decision Tree | 73.74% | 50.35% | **77.01%** | 60.89% | 0.823 |
-| **Random Forest** | **75.87%** | **53.31%** | **73.26%** | **61.71%** | **0.839** |
-| XGBoost | 75.23% | 52.40% | 72.99% | 61.01% | 0.830 |
+| **Random Forest** | **75.80%** | **53.22%** | **72.99%** | **61.56%** | **0.839** |
+| XGBoost | 75.30% | 52.53% | 72.19% | 60.81% | 0.830 |
 
 Two engineered features — `ContractRiskScore` and `ChargesToTenureRatio` — outrank every raw column in feature importance for both Random Forest and XGBoost. 
 See the report for the full four-round multicollinearity audit behind the final feature set, and the eight-feature engineering audit
@@ -167,7 +167,7 @@ and **Models -> Reliability -> Generalisation Gap**.
 
 - Role: reduce the variance of a single Decision Tree by combining many trees.
 - Tuned configuration: 200 trees, `max_depth=12`, `min_samples_leaf=5`.
-- Results: Accuracy 75.87%, Precision 53.31%, Recall 73.26%, F1 61.71%, AUC 0.839.
+- Results: Accuracy 75.80%, Precision 53.22%, Recall 72.99%, F1 61.56%, AUC 0.839.
 - Business meaning: it catches about 73 of every 100 actual churners and has the strongest overall balance at the default threshold.
 - Strength: best point estimates for Accuracy, Precision, F1 and AUC.
 - Limitation: less transparent than Logistic Regression or a single tree and still shows a train-to-test performance gap.
@@ -196,7 +196,7 @@ For the final comparison, avoid claiming that one model is best for every purpos
 - Random Forest has the best overall point-estimate balance and is the recommended default.
 - XGBoost is a competitive nonlinear benchmark but does not outperform Random Forest on this hold-out set.
 
-McNemar's paired tests found a statistically significant difference only between Decision Tree and Random Forest (p = 0.009). 
+McNemar's paired tests found a statistically significant difference only between Decision Tree and Random Forest (p = 0.012). 
 Random Forest was not significantly different from Logistic Regression or XGBoost at the 5% level.
 The defensible conclusion is therefore that Random Forest leads the observed point estimates, not that it is conclusively superior to every alternative.
 

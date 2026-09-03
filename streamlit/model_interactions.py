@@ -517,7 +517,6 @@ def plot_cv_stability(
         template="plotly_white",
         margin=dict(l=15, r=30, t=62, b=45),
         font=dict(family="Segoe UI, sans-serif", size=12),
-        transition=TRANSITION,
         xaxis_title=f"Validation-fold {metric} (%) · zoomed scale",
         xaxis=dict(
             range=[x_min, x_max],
@@ -526,7 +525,14 @@ def plot_cv_stability(
             gridcolor="rgba(31,78,121,0.10)",
             zeroline=False,
         ),
-        yaxis_title=None,
+        # Keep Plotly from briefly coercing model labels onto a numeric axis when
+        # Streamlit replaces this figure after the metric control changes.
+        yaxis=dict(
+            title=None,
+            type="category",
+            categoryorder="array",
+            categoryarray=models,
+        ),
         legend=dict(
             orientation="h",
             yanchor="bottom",
